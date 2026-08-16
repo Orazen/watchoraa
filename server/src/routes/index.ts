@@ -1,0 +1,38 @@
+import { Router } from 'express';
+import { adminRouter } from './admin.js';
+import { aiRouter } from './ai.js';
+import { assistanceRouter } from './assistance.js';
+import { auditRouter } from './audit.js';
+import { authRouter } from './auth.js';
+import { caregiverRouter } from './caregiver.js';
+import { consentsRouter } from './consents.js';
+import { contactsRouter } from './contacts.js';
+import { healthRouter } from './health.js';
+import { incidentsRouter } from './incidents.js';
+import { journeysRouter } from './journeys.js';
+import { placesRouter } from './places.js';
+import { preferencesRouter } from './preferences.js';
+import { readingEntriesRouter } from './reading-entries.js';
+import { ttsRouter } from './tts.js';
+import { safeJourneyRouter } from './safe-journey.js';
+import { emergencyRouter } from './emergency.js';
+
+export const apiRouter = Router();
+
+apiRouter.use('/health', healthRouter);
+apiRouter.use('/auth', authRouter);
+apiRouter.use('/ai', aiRouter);
+apiRouter.use('/contacts', contactsRouter);
+apiRouter.use('/places', placesRouter);
+apiRouter.use('/incidents', incidentsRouter);
+apiRouter.use('/assistance', assistanceRouter);
+apiRouter.use('/caregiver', caregiverRouter);
+apiRouter.use('/preferences', preferencesRouter);
+apiRouter.use('/reading-entries', readingEntriesRouter);
+apiRouter.use('/consents', consentsRouter);
+apiRouter.use('/journeys', journeysRouter);
+apiRouter.use('/audit-logs', auditRouter);
+apiRouter.use('/tts', ttsRouter);
+apiRouter.use('/safe-journey', safeJourneyRouter);
+apiRouter.use('/emergency', emergencyRouter);
+apiRouter.use('/admin', adminRouter);

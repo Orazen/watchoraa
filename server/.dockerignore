@@ -1,0 +1,8 @@
+node_modules
+dist
+.env
+.env.*
+*.tsbuildinfo
+npm-debug.log
+.git
+.claude-flow

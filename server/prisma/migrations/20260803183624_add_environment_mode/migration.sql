@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "SessionMode" ADD VALUE 'ENVIRONMENT';
