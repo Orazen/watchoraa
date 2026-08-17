@@ -691,11 +691,19 @@ export const api = {
   ttsAudioUrl: async (text: string, voice: string, rate = 1): Promise<string> => {
     const token = getToken();
     const params = new URLSearchParams({ text, voice, rate: String(rate) });
-    const res = await fetch(`${API_BASE_URL}/api/tts/audio?${params.toString()}`, {
+    const url = `${API_BASE_URL}/api/tts/audio?${params.toString()}`;
+    const res = await fetch(url, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     });
-    if (!res.ok) throw new ApiError('Speech service unavailable', res.status);
+    if (!res.ok) throw new ApiError(`Speech service returned status ${res.status}`, res.status);
+    const contentType = res.headers.get('content-type') || '';
+    if (!contentType.includes('audio') && !contentType.includes('mpeg') && !contentType.includes('octet-stream')) {
+      throw new ApiError('Speech response is not valid audio', 502);
+    }
     const blob = await res.blob();
+    if (blob.size < 100) {
+      throw new ApiError('Speech response payload too small', 502);
+    }
     return URL.createObjectURL(blob);
   },
 

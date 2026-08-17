@@ -146,3 +146,74 @@ export function getStepSpeech(step: string, voiceName: string): string {
       return '';
   }
 }
+
+export function getPhoneticFallback(text: string, voiceName: string): string {
+  const lang = getLangFromVoice(voiceName);
+  if (lang === 'hi') {
+    if (text.includes('परीक्षण') || text.includes('आवाज़')) {
+      return 'Yeh Watchora ki aawaaz ka test hai. Aap ise sun sakte hain.';
+    }
+    if (text.includes('स्वागत')) {
+      return 'Watchora mein aapka swagat hai. Main aapke aas-paas ka vatavaran describe karne aur yatra mein madad kar sakta hoon.';
+    }
+    if (text.includes('पसंदीदा')) {
+      return 'Watchora ki aawaz test karein. Neeche aawaz aur speed chunein.';
+    }
+    if (text.includes('माइक्रोफ़ोन')) {
+      return 'Microphone access se aap aawaz se Watchora control kar sakte hain.';
+    }
+    if (text.includes('कैमरा')) {
+      return 'Camera access se Watchora drishya aur obstacles identify kar sakta hai.';
+    }
+    if (text.includes('स्थान') || text.includes('लोकेशन')) {
+      return 'Safe journey aur navigation ke liye location access zaroori hai.';
+    }
+    if (text.includes('सूचनाएं') || text.includes('नोटिफ़िकेशन')) {
+      return 'Notifications aapko journey aur emergency alerts dete hain.';
+    }
+    if (text.includes('तैयार')) {
+      return 'Watchora tayyar hai. Setup poora ho gaya hai.';
+    }
+  }
+  if (lang === 'ta') {
+    if (text.includes('சோதனை') || text.includes('குரல்')) {
+      return 'Idhu Watchora-vin kural sodhanai. Neengal idhai thelivaga ketkalam.';
+    }
+  }
+  if (lang === 'te') {
+    if (text.includes('పరీక్ష') || text.includes('స్వర')) {
+      return 'Idhi Watchora swara pareeksha. Meeru deenni spashtanga vinavachu.';
+    }
+  }
+  if (lang === 'kn') {
+    if (text.includes('ಪರೀಕ್ಷೆ') || text.includes('ಧ್ವನಿ')) {
+      return 'Idu Watchora dhvani pareekshe. Neevu idannu spashtavagi kelabahudu.';
+    }
+  }
+  if (lang === 'ml') {
+    if (text.includes('പരിശോധന') || text.includes('ശബ്ദ')) {
+      return 'Ithu Watchora shabda parishodhana aanu. Ningalkku ithu vyakthamayi kelkkam.';
+    }
+  }
+  if (lang === 'bn') {
+    if (text.includes('পরীক্ষা') || text.includes('ভয়েস')) {
+      return 'Eti Watchora voice porikkha. Aapni eti spishtobhabe shunte pachhen.';
+    }
+  }
+  if (lang === 'gu') {
+    if (text.includes('પરીક્ષણ') || text.includes('અવાજ')) {
+      return 'Aa Watchora avaaj pareekshan chhe. Tame tene spasht reete saambhi shako chho.';
+    }
+  }
+  if (lang === 'mr') {
+    if (text.includes('चाचणी') || text.includes('आवाज')) {
+      return 'Hi Watchora aawaaz chaachani aahe. Aapan he spashtpane aiku shakta.';
+    }
+  }
+  if (lang === 'ur') {
+    if (text.includes('ٹیسٹ') || text.includes('آواز')) {
+      return 'Yeh Watchora ki aawaaz ka test hai. Aap ise waazeh taur par sun sakte hain.';
+    }
+  }
+  return text;
+}

@@ -177,16 +177,17 @@ export default async function handler(req: any, res: any) {
     return;
   }
 
-  const text = (req.query.text as string) || 'Hello from Watchora';
-  const voice = (req.query.voice as string) || 'en-US-JennyNeural';
-  const rate = parseFloat(req.query.rate as string) || 1.0;
+  const text = (req.query?.text as string) || 'Hello from Watchora';
+  const voice = (req.query?.voice as string) || 'en-US-JennyNeural';
+  const rate = parseFloat((req.query?.rate as string) || '1.0');
 
   try {
     const audioBuffer = await synthesizeChunk(text, voice, rate);
     res.setHeader('Content-Type', 'audio/mpeg');
-    res.setHeader('Content-Length', audioBuffer.length);
+    res.setHeader('Content-Length', String(audioBuffer.length));
     res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
-    res.status(200).send(audioBuffer);
+    res.status(200);
+    res.end(audioBuffer);
   } catch (err: any) {
     console.error('Vercel TTS error:', err);
     res.status(500).json({ error: 'TTS synthesis failed', details: err?.message || String(err) });

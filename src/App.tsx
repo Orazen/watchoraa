@@ -43,7 +43,7 @@ import { HELP_MESSAGE } from './voice/voiceTypes';
 import type { VoiceBridge } from './VoiceFirstShell';
 import { LandingPage } from './LandingPage';
 import { VoiceFirstShell, createVoiceBridge, usePermissionService } from './VoiceFirstShell';
-import { getVoiceTestPhrase, getStepSpeech } from './voice/voicePhrases';
+import { getVoiceTestPhrase, getStepSpeech, getPhoneticFallback } from './voice/voicePhrases';
 
 import { MapView } from './MapView';
 type TabKey = 'home' | 'tracking' | 'routes' | 'journey' | 'sos' | 'community' | 'caregiver' | 'settings' | 'admin';
@@ -600,37 +600,44 @@ function MainApp({
   function fallbackSpeak(text: string, locale?: string, rate?: number) {
     if (!('speechSynthesis' in window)) return;
     window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = Math.max(0.5, Math.min(2.0, rate ?? voiceRate));
-    utterance.pitch = 1;
-    utterance.lang = locale || 'en-US';
 
-    // Pick best browser voice
-    const voices = window.speechSynthesis.getVoices();
-    if (voices && voices.length > 0) {
-      const isMale = voice.toLowerCase().includes('guy') || voice.toLowerCase().includes('ryan') || voice.toLowerCase().includes('prabhat') || voice.toLowerCase().includes('madhur') || voice.toLowerCase().includes('valluvar') || voice.toLowerCase().includes('mohan') || voice.toLowerCase().includes('gagan') || voice.toLowerCase().includes('midhun') || voice.toLowerCase().includes('bashkar') || voice.toLowerCase().includes('alvaro') || voice.toLowerCase().includes('katja');
-      const langPrefix = (locale || 'en').split('-')[0].toLowerCase();
-      const langVoices = voices.filter((v) => v.lang.toLowerCase().startsWith(langPrefix));
+    const voices = window.speechSynthesis.getVoices() || [];
+    const isMale = voice.toLowerCase().includes('guy') || voice.toLowerCase().includes('ryan') || voice.toLowerCase().includes('prabhat') || voice.toLowerCase().includes('madhur') || voice.toLowerCase().includes('valluvar') || voice.toLowerCase().includes('mohan') || voice.toLowerCase().includes('gagan') || voice.toLowerCase().includes('midhun') || voice.toLowerCase().includes('bashkar') || voice.toLowerCase().includes('alvaro') || voice.toLowerCase().includes('katja');
+    const langPrefix = (locale || 'en').split('-')[0].toLowerCase();
+    const langVoices = voices.filter((v) => v.lang.toLowerCase().startsWith(langPrefix));
 
-      if (langVoices.length > 0) {
-        const preferred = langVoices.find((v) => {
-          const name = v.name.toLowerCase();
-          if (isMale && (name.includes('male') || name.includes('madhur') || name.includes('neel') || name.includes('hemant') || name.includes('valluvar') || name.includes('mohan') || name.includes('gagan') || name.includes('midhun') || name.includes('bashkar') || name.includes('alvaro') || name.includes('guy') || name.includes('david'))) return true;
-          if (!isMale && (name.includes('female') || name.includes('swara') || name.includes('lekha') || name.includes('veena') || name.includes('pallavi') || name.includes('shruti') || name.includes('sapna') || name.includes('sobhana') || name.includes('tanishaa') || name.includes('dhwani') || name.includes('elvira') || name.includes('jenny') || name.includes('samantha'))) return true;
-          return /natural|premium|enhanced|google|apple/i.test(name);
-        }) || langVoices[0];
-        utterance.voice = preferred;
-        utterance.lang = preferred.lang || locale || 'en-US';
-      } else {
-        const preferred = voices.find((v) => {
+    let textToSpeak = text;
+    let effectiveLang = locale || 'en-US';
+    let chosenVoice: SpeechSynthesisVoice | null = null;
+
+    if (langVoices.length > 0) {
+      chosenVoice = langVoices.find((v) => {
+        const name = v.name.toLowerCase();
+        if (isMale && (name.includes('male') || name.includes('madhur') || name.includes('neel') || name.includes('hemant') || name.includes('valluvar') || name.includes('mohan') || name.includes('gagan') || name.includes('midhun') || name.includes('bashkar') || name.includes('alvaro') || name.includes('guy') || name.includes('david'))) return true;
+        if (!isMale && (name.includes('female') || name.includes('swara') || name.includes('lekha') || name.includes('veena') || name.includes('pallavi') || name.includes('shruti') || name.includes('sapna') || name.includes('sobhana') || name.includes('tanishaa') || name.includes('dhwani') || name.includes('elvira') || name.includes('jenny') || name.includes('samantha'))) return true;
+        return /natural|premium|enhanced|google|apple/i.test(name);
+      }) || langVoices[0];
+      effectiveLang = chosenVoice.lang || locale || 'en-US';
+    } else {
+      textToSpeak = getPhoneticFallback(text, voice);
+      chosenVoice =
+        voices.find((v) => v.lang.toLowerCase().startsWith('en-in') || v.lang.toLowerCase().includes('in')) ||
+        voices.find((v) => {
           const name = v.name.toLowerCase();
           if (isMale && (name.includes('guy') || name.includes('daniel') || name.includes('male') || name.includes('david'))) return true;
           if (!isMale && (name.includes('jenny') || name.includes('samantha') || name.includes('karen') || name.includes('female') || name.includes('victoria') || name.includes('zira'))) return true;
           return /natural|premium|enhanced|google|apple/i.test(name);
-        });
-        if (preferred) utterance.voice = preferred;
-      }
+        }) ||
+        voices[0] ||
+        null;
+      effectiveLang = chosenVoice?.lang || 'en-IN';
     }
+
+    const utterance = new SpeechSynthesisUtterance(textToSpeak);
+    utterance.rate = Math.max(0.5, Math.min(2.0, rate ?? voiceRate));
+    utterance.pitch = 1;
+    utterance.lang = effectiveLang;
+    if (chosenVoice) utterance.voice = chosenVoice;
 
     // Signal the voice provider so microphone recognition pauses while we
     // talk (the mic would otherwise hear our own voice and could loop).

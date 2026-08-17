@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "rewrites": [
+    {
+      "source": "/api/tts/audio",
+      "destination": "/api/tts/audio"
+    },
+    {
+      "source": "/api/tts/voices",
+      "destination": "/api/tts/voices"
+    },
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}

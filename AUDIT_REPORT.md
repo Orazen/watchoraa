@@ -16,11 +16,16 @@ This audit verifies and validates the fix for multilingual neural voice synthesi
 ## 2. Root Cause Analysis
 
 ### Issue A: No Voice Output for Non-English Languages on Vercel
-- **Root Cause**: When deployed on Vercel, client calls to `${API_BASE_URL}/api/tts/audio` defaulted to `http://127.0.0.1:4000`, failing immediately. The subsequent browser `window.speechSynthesis` fallback lacked native Hindi/Indian language voice packs on standard desktop/mobile OS installs, causing silent speech failures.
+- **Root Cause**:
+  1. Without `vercel.json`, Vercel SPA routing intercepted `/api/tts/audio` and returned the HTML SPA bundle (`index.html`) as a `200 OK` response, which failed audio decoding (`audio.onerror`).
+  2. The browser `SpeechSynthesis` fallback was trying to assign an English voice object to Devanagari/Tamil/Telugu native scripts on systems without those language packs installed, causing browsers to drop speech and emit silence.
 - **Resolution**:
-  1. Created Vercel Serverless Functions at `/api/tts/audio.ts` and `/api/tts/voices.ts` powered by Microsoft Edge's free neural TTS engine with 400+ voices.
-  2. Updated `API_BASE_URL` in `src/api.ts` to automatically resolve to root (`''`) in production, routing all audio synthesis to Vercel Serverless.
-  3. Added localized test phrases and guidance in `src/voice/voicePhrases.ts` matching each language's native script.
+  1. Created `vercel.json` with explicit rewrite rules for `/api/tts/audio` and `/api/tts/voices` to route to Vercel Serverless Functions.
+  2. Implemented binary stream response (`res.end(audioBuffer)`) and content-type validation in `src/api.ts`.
+  3. Implemented a 3-Tier Multi-Tier Voice Fallback Architecture:
+     - **Tier 1 (Vercel Serverless Neural Edge TTS)**: Streams studio-quality Microsoft Edge neural MP3 audio across all 15+ supported languages (Hindi, Tamil, Telugu, etc.).
+     - **Tier 2 (Browser Native Voice)**: If offline, uses device-installed native voices for the selected language.
+     - **Tier 3 (Phonetic Transliteration Fallback)**: If offline and the host OS has zero Indian language packs installed, automatically translates text to phonetic syllables so device speech synthesis always produces loud, clear audio instead of silence.
 
 ### Issue B: Slower / Faster Speed Adjustment Not Working
 - **Root Cause**: `PermissionOnboarding.tsx` updated a local `speechRate` state without propagating it to `App.tsx`'s active `voiceRate` or passing it to `speak()`. In addition, `fallbackSpeak` hardcoded the global rate, ignoring per-utterance rate overrides.
