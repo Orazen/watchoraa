@@ -149,6 +149,32 @@ export function PermissionOnboarding({
                   fontSize: '0.95rem',
                 }}
               >
+                <optgroup label="Sarvam AI (Indian Neural Voices)">
+                  <option value="sarvam-anushka">👩 Hindi — Anushka (अनुष्का / Sarvam AI)</option>
+                  <option value="sarvam-abhilash">👨 Hindi — Abhilash (अभिलाष / Sarvam AI)</option>
+                  <option value="sarvam-aditya">👨 Hindi — Aditya (आदित्य / Sarvam v3)</option>
+                  <option value="sarvam-priya">👩 Hindi — Priya (प्रिया / Sarvam v3)</option>
+                  <option value="sarvam-manisha">👩 Hindi — Manisha (मनीषा / Sarvam AI)</option>
+                  <option value="sarvam-vidya">👩 Tamil — Vidya (வித்யா / Sarvam AI)</option>
+                  <option value="sarvam-rahul">👨 Telugu — Rahul (రాహుల్ / Sarvam AI)</option>
+                </optgroup>
+                <optgroup label="Indian Languages (Edge Neural)">
+                  <option value="hi-IN-SwaraNeural">👩 Hindi — Swara (हिन्दी)</option>
+                  <option value="hi-IN-MadhurNeural">👨 Hindi — Madhur (हिन्दी)</option>
+                  <option value="ta-IN-PallaviNeural">👩 Tamil — Pallavi (தமிழ்)</option>
+                  <option value="ta-IN-ValluvarNeural">👨 Tamil — Valluvar (தமிழ்)</option>
+                  <option value="te-IN-ShrutiNeural">👩 Telugu — Shruti (తెలుగు)</option>
+                  <option value="te-IN-MohanNeural">👨 Telugu — Mohan (తెలుగు)</option>
+                  <option value="kn-IN-SapnaNeural">👩 Kannada — Sapna (ಕನ್ನಡ)</option>
+                  <option value="kn-IN-GaganNeural">👨 Kannada — Gagan (ಕನ್ನಡ)</option>
+                  <option value="ml-IN-SobhanaNeural">👩 Malayalam — Sobhana (മലയാളം)</option>
+                  <option value="ml-IN-MidhunNeural">👨 Malayalam — Midhun (മലയാളം)</option>
+                  <option value="bn-IN-TanishaaNeural">👩 Bengali — Tanishaa (বাংলা)</option>
+                  <option value="bn-IN-BashkarNeural">👨 Bengali — Bashkar (বাংলা)</option>
+                  <option value="gu-IN-DhwaniNeural">👩 Gujarati — Dhwani (ગુજરાતી)</option>
+                  <option value="mr-IN-AarohiNeural">👩 Marathi — Aarohi (मराठी)</option>
+                  <option value="ur-IN-GulNeural">👩 Urdu — Gul (اردو)</option>
+                </optgroup>
                 <optgroup label="English">
                   <option value="en-US-JennyNeural">👩 English (US) — Jenny (Warm & Natural)</option>
                   <option value="en-US-GuyNeural">👨 English (US) — Guy (Calm & Clear)</option>
@@ -158,20 +184,6 @@ export function PermissionOnboarding({
                   <option value="en-IN-NeerjaNeural">👩 English (India) — Neerja</option>
                   <option value="en-IN-PrabhatNeural">👨 English (India) — Prabhat</option>
                   <option value="en-AU-NatashaNeural">👩 English (Australia) — Natasha</option>
-                </optgroup>
-                <optgroup label="Indian Languages">
-                  <option value="hi-IN-SwaraNeural">👩 Hindi — Swara (हिन्दी)</option>
-                  <option value="hi-IN-MadhurNeural">👨 Hindi — Madhur (हिन्दी)</option>
-                  <option value="ta-IN-PallaviNeural">👩 Tamil — Pallavi (தமிழ்)</option>
-                  <option value="ta-IN-ValluvarNeural">👨 Tamil — Valluvar (தமிழ்)</option>
-                  <option value="te-IN-ShrutiNeural">👩 Telugu — Shruti (తెలుగు)</option>
-                  <option value="te-IN-MohanNeural">👨 Telugu — Mohan (తెలుగు)</option>
-                  <option value="kn-IN-SapnaNeural">👩 Kannada — Sapna (ಕನ್ನಡ)</option>
-                  <option value="ml-IN-SobhanaNeural">👩 Malayalam — Sobhana (മലയാളം)</option>
-                  <option value="bn-IN-TanishaaNeural">👩 Bengali — Tanishaa (বাংলা)</option>
-                  <option value="gu-IN-DhwaniNeural">👩 Gujarati — Dhwani (ગુજરાતી)</option>
-                  <option value="mr-IN-AarohiNeural">👩 Marathi — Aarohi (मराठी)</option>
-                  <option value="ur-IN-GulNeural">👩 Urdu — Gul (اردو)</option>
                 </optgroup>
                 <optgroup label="Other Languages">
                   <option value="es-ES-ElviraNeural">👩 Spanish — Elvira (Español)</option>

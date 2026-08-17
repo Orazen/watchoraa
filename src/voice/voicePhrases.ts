@@ -1,4 +1,9 @@
 export function getLangFromVoice(voiceName: string): string {
+  if (voiceName.startsWith('sarvam-')) {
+    if (voiceName.includes('vidya')) return 'ta';
+    if (voiceName.includes('rahul')) return 'te';
+    return 'hi';
+  }
   const m = /^([a-z]{2})-[A-Z]{2}/.exec(voiceName);
   return m ? m[1] : 'en';
 }

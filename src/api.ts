@@ -208,6 +208,11 @@ export type EmergencySession = {
 };
 
 export function localeFromVoice(shortName: string): string {
+  if (shortName.startsWith('sarvam-')) {
+    if (shortName.includes('vidya')) return 'ta-IN';
+    if (shortName.includes('rahul')) return 'te-IN';
+    return 'hi-IN';
+  }
   const m = /^([a-z]{2}-[A-Z]{2})/.exec(shortName);
   return m?.[1] ?? 'en-US';
 }

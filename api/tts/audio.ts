@@ -68,7 +68,72 @@ function rateToSsml(rate: number): string {
   return `${pct >= 0 ? '+' : ''}${pct}%`;
 }
 
+// ── Sarvam AI Indian TTS Integration (bulbul:v2 & bulbul:v3) ──
+async function synthesizeSarvam(text: string, voice: string, rate: number, apiKey: string): Promise<Buffer | null> {
+  try {
+    let speaker = 'anushka';
+    let lang = 'hi-IN';
+    const v = voice.toLowerCase();
+
+    if (v.includes('abhilash')) speaker = 'abhilash';
+    else if (v.includes('aditya')) speaker = 'aditya';
+    else if (v.includes('priya')) speaker = 'priya';
+    else if (v.includes('manisha')) speaker = 'manisha';
+    else if (v.includes('vidya')) { speaker = 'vidya'; lang = 'ta-IN'; }
+    else if (v.includes('rahul')) { speaker = 'rahul'; lang = 'te-IN'; }
+    else if (v.includes('arya')) speaker = 'arya';
+    else if (v.includes('karun')) speaker = 'karun';
+    else if (v.includes('hitesh')) speaker = 'hitesh';
+    else if (v.includes('anushka')) speaker = 'anushka';
+
+    const payload = {
+      inputs: [text],
+      target_language_code: lang,
+      speaker: speaker,
+      pitch: 0,
+      pace: Math.max(0.5, Math.min(2.0, rate)),
+      loudness: 1.0,
+      speech_sample_rate: 22050,
+      enable_preprocessing: true,
+      model: speaker === 'aditya' || speaker === 'priya' || speaker === 'rahul' ? 'bulbul:v3-beta' : 'bulbul:v2',
+    };
+
+    const res = await fetch('https://api.sarvam.ai/text-to-speech', {
+      method: 'POST',
+      headers: {
+        'api-subscription-key': apiKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) return null;
+    const data = (await res.json()) as { audios?: string[] };
+    if (data.audios && data.audios[0]) {
+      return Buffer.from(data.audios[0], 'base64');
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+// ── Microsoft Edge Neural TTS Engine ──
 function synthesizeChunk(text: string, voice: string, rate: number): Promise<Buffer> {
+  // Map Sarvam AI voice aliases to Edge Neural counterparts if Sarvam key is absent
+  let edgeVoice = voice;
+  if (voice.startsWith('sarvam-')) {
+    if (voice.includes('abhilash') || voice.includes('aditya') || voice.includes('karun') || voice.includes('hitesh')) {
+      edgeVoice = 'hi-IN-MadhurNeural';
+    } else if (voice.includes('vidya')) {
+      edgeVoice = 'ta-IN-PallaviNeural';
+    } else if (voice.includes('rahul')) {
+      edgeVoice = 'te-IN-ShrutiNeural';
+    } else {
+      edgeVoice = 'hi-IN-SwaraNeural';
+    }
+  }
+
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(wssUrl(), { headers: wsHeaders() });
     const audio: Buffer[] = [];
@@ -145,7 +210,7 @@ function synthesizeChunk(text: string, voice: string, rate: number): Promise<Buf
       const ssmlRate = rateToSsml(rate);
       const ssml =
         `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xmlns:mstts="https://www.w3.org/2001/mstts" xml:lang="en-US">` +
-        `<voice name="${escXml(voice)}">` +
+        `<voice name="${escXml(edgeVoice)}">` +
         `<prosody rate="${ssmlRate}" pitch="+0Hz">` +
         `${escXml(text)}` +
         `</prosody>` +
@@ -182,7 +247,17 @@ export default async function handler(req: any, res: any) {
   const rate = parseFloat((req.query?.rate as string) || '1.0');
 
   try {
-    const audioBuffer = await synthesizeChunk(text, voice, rate);
+    let audioBuffer: Buffer | null = null;
+    const sarvamApiKey = process.env.SARVAM_API_KEY || process.env.VITE_SARVAM_API_KEY;
+
+    if (sarvamApiKey && (voice.startsWith('sarvam-') || voice.includes('hi-') || voice.includes('ta-') || voice.includes('te-'))) {
+      audioBuffer = await synthesizeSarvam(text, voice, rate, sarvamApiKey);
+    }
+
+    if (!audioBuffer) {
+      audioBuffer = await synthesizeChunk(text, voice, rate);
+    }
+
     res.setHeader('Content-Type', 'audio/mpeg');
     res.setHeader('Content-Length', String(audioBuffer.length));
     res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
