@@ -11,6 +11,7 @@
     "test": "vitest run",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
+    "seed": "tsx scripts/seed.ts",
     "make-admin": "tsx scripts/make-admin.ts"
   },
   "dependencies": {

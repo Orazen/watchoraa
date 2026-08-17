@@ -130,6 +130,7 @@ npm install
 cp .env.example .env   # set DATABASE_URL, JWT_SECRET, GEMINI_API_KEY
 createdb watchora
 npx prisma migrate deploy
+npm run seed           # seeds default Admin, Blind User, and Caregiver accounts
 npm run dev            # http://127.0.0.1:4000
 ```
 
@@ -144,7 +145,15 @@ npm install
 npm run dev            # http://127.0.0.1:5173
 ```
 
-Create an account (the first signup becomes ADMIN), then use the app.
+### Default Accounts (from `npm run seed`)
+
+| Account Type | Email / Username | Password | Role |
+| :--- | :--- | :--- | :--- |
+| **Admin User** | `admin@watchora.app` | `AdminPass123!` | `ADMIN` |
+| **Normal User** | `user@watchora.app` | `UserPass123!` | `BLIND_USER` |
+| **Caregiver User** | `caregiver@watchora.app` | `CarePass123!` | `CAREGIVER` |
+
+*(Note: On a fresh database, the first user to sign up through the UI automatically becomes the ADMIN).*
 
 ## Voice
 
