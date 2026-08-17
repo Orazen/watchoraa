@@ -286,7 +286,7 @@ export default async function handler(req: any, res: any) {
 
   try {
     let audioBuffer: Buffer | null = null;
-    const sarvamApiKey = process.env.SARVAM_API_KEY || process.env.VITE_SARVAM_API_KEY;
+    const sarvamApiKey = process.env.SARVAM_API_KEY || process.env.VITE_SARVAM_API_KEY || 'sk_yaj0g3lw_EmKdN04nBNQnfrzQUfelmgeg';
 
     if (sarvamApiKey) {
       audioBuffer = await synthesizeSarvam(text, voice, rate, sarvamApiKey);
@@ -296,7 +296,8 @@ export default async function handler(req: any, res: any) {
       audioBuffer = await synthesizeChunk(text, voice, rate);
     }
 
-    res.setHeader('Content-Type', 'audio/mpeg');
+    const isWav = audioBuffer.slice(0, 4).toString('ascii') === 'RIFF';
+    res.setHeader('Content-Type', isWav ? 'audio/wav' : 'audio/mpeg');
     res.setHeader('Content-Length', String(audioBuffer.length));
     res.setHeader('Cache-Control', 'public, max-age=86400, stale-while-revalidate=604800');
     res.status(200);

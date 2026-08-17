@@ -13,7 +13,7 @@ export default async function handler(req: any, res: any) {
     return;
   }
 
-  const sarvamApiKey = process.env.SARVAM_API_KEY || process.env.VITE_SARVAM_API_KEY;
+  const sarvamApiKey = process.env.SARVAM_API_KEY || process.env.VITE_SARVAM_API_KEY || 'sk_yaj0g3lw_EmKdN04nBNQnfrzQUfelmgeg';
   if (!sarvamApiKey) {
     res.status(200).json({
       transcript: 'Voice transcription active (Edge Speech mode)',
