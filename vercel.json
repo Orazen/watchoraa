@@ -10,6 +10,30 @@
       "destination": "/api/tts/voices"
     },
     {
+      "source": "/api/translate",
+      "destination": "/api/translate/translate"
+    },
+    {
+      "source": "/api/stt/transcribe",
+      "destination": "/api/stt/transcribe"
+    },
+    {
+      "source": "/api/auth/login",
+      "destination": "/api/auth/login"
+    },
+    {
+      "source": "/api/auth/me",
+      "destination": "/api/auth/me"
+    },
+    {
+      "source": "/api/auth/signup",
+      "destination": "/api/auth/signup"
+    },
+    {
+      "source": "/api/auth/refresh",
+      "destination": "/api/auth/refresh"
+    },
+    {
       "source": "/api/(.*)",
       "destination": "/api/$1"
     },

@@ -773,6 +773,19 @@ export const api = {
   // ── Caregiver live-location map (consent-gated) ──
   caregiverUserLocation: (userId: string) =>
     request<CaregiverLiveLocation>(`/api/caregiver/location/${userId}`),
+
+  // ── Sarvam AI Speech & Language (Mayura & Saaras) ──
+  translate: (input: { input: string; source_language_code?: string; target_language_code?: string }) =>
+    request<{ translated_text: string; source_language_code: string; target_language_code: string }>('/api/translate', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+  transcribe: (formData: FormData) =>
+    request<{ transcript: string; language_code?: string }>('/api/stt/transcribe', {
+      method: 'POST',
+      body: formData,
+      headers: {},
+    }),
 };
 
 export { ApiError };

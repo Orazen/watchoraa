@@ -68,34 +68,73 @@ function rateToSsml(rate: number): string {
   return `${pct >= 0 ? '+' : ''}${pct}%`;
 }
 
-// ── Sarvam AI Indian TTS Integration (bulbul:v2 & bulbul:v3) ──
+// ── Sarvam AI Official Cookbook TTS Integration (Bulbul v2 & Bulbul v3) ──
 async function synthesizeSarvam(text: string, voice: string, rate: number, apiKey: string): Promise<Buffer | null> {
   try {
     let speaker = 'anushka';
     let lang = 'hi-IN';
     const v = voice.toLowerCase();
 
-    if (v.includes('abhilash')) speaker = 'abhilash';
-    else if (v.includes('aditya')) speaker = 'aditya';
-    else if (v.includes('priya')) speaker = 'priya';
-    else if (v.includes('manisha')) speaker = 'manisha';
-    else if (v.includes('vidya')) { speaker = 'vidya'; lang = 'ta-IN'; }
-    else if (v.includes('rahul')) { speaker = 'rahul'; lang = 'te-IN'; }
-    else if (v.includes('arya')) speaker = 'arya';
-    else if (v.includes('karun')) speaker = 'karun';
-    else if (v.includes('hitesh')) speaker = 'hitesh';
-    else if (v.includes('anushka')) speaker = 'anushka';
+    // Map language code based on voice selection
+    if (v.includes('ta-') || v.includes('tamil') || v.includes('vidya')) {
+      lang = 'ta-IN';
+      speaker = v.includes('valluvar') ? 'karun' : 'vidya';
+    } else if (v.includes('te-') || v.includes('telugu') || v.includes('rahul')) {
+      lang = 'te-IN';
+      speaker = v.includes('shruti') ? 'anushka' : 'rahul';
+    } else if (v.includes('kn-') || v.includes('kannada') || v.includes('sapna')) {
+      lang = 'kn-IN';
+      speaker = v.includes('gagan') ? 'karun' : 'anushka';
+    } else if (v.includes('ml-') || v.includes('malayalam') || v.includes('sobhana')) {
+      lang = 'ml-IN';
+      speaker = 'anushka';
+    } else if (v.includes('bn-') || v.includes('bengali') || v.includes('tanishaa')) {
+      lang = 'bn-IN';
+      speaker = 'anushka';
+    } else if (v.includes('gu-') || v.includes('gujarati') || v.includes('dhwani')) {
+      lang = 'gu-IN';
+      speaker = 'anushka';
+    } else if (v.includes('mr-') || v.includes('marathi') || v.includes('aarohi')) {
+      lang = 'mr-IN';
+      speaker = 'anushka';
+    } else if (v.includes('pa-') || v.includes('punjabi')) {
+      lang = 'pa-IN';
+      speaker = 'anushka';
+    } else if (v.includes('od-') || v.includes('odia')) {
+      lang = 'od-IN';
+      speaker = 'anushka';
+    } else if (v.includes('en-in') || v.includes('neerja') || v.includes('prabhat')) {
+      lang = 'en-IN';
+      speaker = v.includes('prabhat') ? 'aditya' : 'amelia';
+    } else {
+      lang = 'hi-IN';
+      if (v.includes('abhilash')) speaker = 'abhilash';
+      else if (v.includes('aditya')) speaker = 'aditya';
+      else if (v.includes('priya')) speaker = 'priya';
+      else if (v.includes('manisha')) speaker = 'manisha';
+      else if (v.includes('karun')) speaker = 'karun';
+      else if (v.includes('hitesh')) speaker = 'hitesh';
+      else if (v.includes('madhur')) speaker = 'abhilash';
+      else speaker = 'anushka';
+    }
+
+    const isV3 = speaker === 'aditya' || speaker === 'priya' || speaker === 'amelia' || speaker === 'sophia';
+    const model = isV3 ? 'bulbul:v3-beta' : 'bulbul:v2';
+    const sampleRate = isV3 ? 24000 : 22050;
+
+    // Truncate text to 500 characters max per request per Sarvam AI Cookbook specification
+    const sanitizedText = text.slice(0, 500);
 
     const payload = {
-      inputs: [text],
+      inputs: [sanitizedText],
       target_language_code: lang,
       speaker: speaker,
-      pitch: 0,
+      pitch: isV3 ? 0 : 0,
       pace: Math.max(0.5, Math.min(2.0, rate)),
-      loudness: 1.0,
-      speech_sample_rate: 22050,
+      loudness: isV3 ? 1.0 : 1.0,
+      speech_sample_rate: sampleRate,
       enable_preprocessing: true,
-      model: speaker === 'aditya' || speaker === 'priya' || speaker === 'rahul' ? 'bulbul:v3-beta' : 'bulbul:v2',
+      model,
     };
 
     const res = await fetch('https://api.sarvam.ai/text-to-speech', {
@@ -118,9 +157,8 @@ async function synthesizeSarvam(text: string, voice: string, rate: number, apiKe
   }
 }
 
-// ── Microsoft Edge Neural TTS Engine ──
+// ── Microsoft Edge Free Neural TTS Fallback Engine ──
 function synthesizeChunk(text: string, voice: string, rate: number): Promise<Buffer> {
-  // Map Sarvam AI voice aliases to Edge Neural counterparts if Sarvam key is absent
   let edgeVoice = voice;
   if (voice.startsWith('sarvam-')) {
     if (voice.includes('abhilash') || voice.includes('aditya') || voice.includes('karun') || voice.includes('hitesh')) {
@@ -250,7 +288,7 @@ export default async function handler(req: any, res: any) {
     let audioBuffer: Buffer | null = null;
     const sarvamApiKey = process.env.SARVAM_API_KEY || process.env.VITE_SARVAM_API_KEY;
 
-    if (sarvamApiKey && (voice.startsWith('sarvam-') || voice.includes('hi-') || voice.includes('ta-') || voice.includes('te-'))) {
+    if (sarvamApiKey) {
       audioBuffer = await synthesizeSarvam(text, voice, rate, sarvamApiKey);
     }
 
@@ -264,7 +302,7 @@ export default async function handler(req: any, res: any) {
     res.status(200);
     res.end(audioBuffer);
   } catch (err: any) {
-    console.error('Vercel TTS error:', err);
+    console.error('TTS synthesis error:', err);
     res.status(500).json({ error: 'TTS synthesis failed', details: err?.message || String(err) });
   }
 }
