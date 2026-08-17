@@ -12,6 +12,7 @@ export interface SpeechRequest {
   text: string;
   priority: SpeechPriority;
   dedupeKey?: string;
+  rate?: number;
   cooldownMs?: number;
   onInterrupt?: () => void;
 }
@@ -45,12 +46,12 @@ export class SpeechPriorityManager {
   private queue: SpeechRequest[] = [];
   private lastSpoken: Map<string, number> = new Map();
   private verbosity: number; // 0 = minimal, 1 = normal, 2 = detailed
-  private playFn: (text: string, priority: SpeechPriority) => void;
+  private playFn: (text: string, priority: SpeechPriority, rate?: number) => void;
   private stopFn: () => void;
   private watchdogTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(opts: {
-    play: (text: string, priority: SpeechPriority) => void;
+    play: (text: string, priority: SpeechPriority, rate?: number) => void;
     stop: () => void;
     verbosity?: number;
   }) {
@@ -108,7 +109,7 @@ export class SpeechPriorityManager {
       if (this.currentPriority != null) this.stopFn();
       this.currentPriority = req.priority;
       this.armWatchdog();
-      this.playFn(req.text, req.priority);
+      this.playFn(req.text, req.priority, req.rate);
       return;
     }
 
@@ -124,7 +125,7 @@ export class SpeechPriorityManager {
     if (next) {
       this.currentPriority = next.priority;
       this.armWatchdog();
-      this.playFn(next.text, next.priority);
+      this.playFn(next.text, next.priority, next.rate);
     }
   }
 

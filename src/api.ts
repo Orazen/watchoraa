@@ -1,4 +1,8 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:4000';
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ??
+  (typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1'
+    ? ''
+    : 'http://127.0.0.1:4000');
 const TOKEN_KEY = 'watchora_token';
 const REFRESH_KEY = 'watchora_refresh';
 const USER_CACHE_KEY = 'watchora_user';

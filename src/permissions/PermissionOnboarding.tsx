@@ -38,17 +38,19 @@ export function PermissionOnboarding({
   testVoice,
   voice = 'en-US-JennyNeural',
   onVoiceChange,
+  onVoiceRateChange,
 }: {
   service: PermissionService;
   onComplete: (result: OnboardingResult) => void;
-  speak: (text: string, priority?: number, dedupeKey?: string) => void;
+  speak: (text: string, priority?: number, dedupeKey?: string, rate?: number) => void;
   testVoice?: () => void;
   voice?: string;
   onVoiceChange?: (newVoice: string) => void;
+  onVoiceRateChange?: (newRate: number) => void;
 }) {
   const [step, setStep] = useState<Step>('welcome');
   const [currentVoice, setCurrentVoice] = useState(voice);
-  const [speechRate, setSpeechRate] = useState(1.05);
+  const [speechRate, setSpeechRate] = useState(1.0);
   const [hapticsEnabled, setHapticsEnabled] = useState(true);
   const [toneEnabled, setToneEnabled] = useState(true);
   const [intensity, setIntensity] = useState<'low' | 'medium' | 'high'>('medium');
@@ -69,7 +71,7 @@ export function PermissionOnboarding({
     const timer = setTimeout(() => {
       const speech = getStepSpeech(step, currentVoice);
       if (speech) {
-        speak(speech, 6, `onboarding-${step}`);
+        speak(speech, 6, `onboarding-${step}`, speechRate);
       }
     }, 350);
     return () => clearTimeout(timer);
@@ -134,7 +136,7 @@ export function PermissionOnboarding({
                   const newV = e.target.value;
                   setCurrentVoice(newV);
                   onVoiceChange?.(newV);
-                  speak(getVoiceTestPhrase(newV), 4, 'voice-change-test');
+                  speak(getVoiceTestPhrase(newV), 4, 'voice-change-test', speechRate);
                 }}
                 aria-label="Select voice"
                 style={{
@@ -179,14 +181,30 @@ export function PermissionOnboarding({
               </select>
             </div>
             <div className="control-inline">
-              <button className="secondary-btn" onClick={() => speak(getVoiceTestPhrase(currentVoice), 4, 'test-voice-btn')}>
+              <button className="secondary-btn" onClick={() => speak(getVoiceTestPhrase(currentVoice), 4, 'test-voice-btn', speechRate)}>
                 <span aria-hidden="true">🔊</span> Test voice
               </button>
-              <button className="ghost-btn" onClick={() => setSpeechRate((v) => Math.max(0.7, Number((v - 0.1).toFixed(2))))}>
+              <button
+                className="ghost-btn"
+                onClick={() => {
+                  const newR = Math.max(0.6, Number((speechRate - 0.15).toFixed(2)));
+                  setSpeechRate(newR);
+                  onVoiceRateChange?.(newR);
+                  speak(getVoiceTestPhrase(currentVoice), 4, 'test-voice-btn', newR);
+                }}
+              >
                 − Slower
               </button>
               <strong>{speechRate.toFixed(2)}x</strong>
-              <button className="ghost-btn" onClick={() => setSpeechRate((v) => Math.min(1.5, Number((v + 0.1).toFixed(2))))}>
+              <button
+                className="ghost-btn"
+                onClick={() => {
+                  const newR = Math.min(1.8, Number((speechRate + 0.15).toFixed(2)));
+                  setSpeechRate(newR);
+                  onVoiceRateChange?.(newR);
+                  speak(getVoiceTestPhrase(currentVoice), 4, 'test-voice-btn', newR);
+                }}
+              >
                 + Faster
               </button>
             </div>

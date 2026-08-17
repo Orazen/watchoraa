@@ -462,23 +462,16 @@ function MainApp({
   }
 
   // Priority-aware speech: danger/emergency interrupts anything lower.
-  function speakWithPriority(text: string, priority: SpeechPriority = 5, dedupeKey?: string) {
+  function speakWithPriority(text: string, priority: SpeechPriority = 5, dedupeKey?: string, rateOverride?: number) {
     if (!speechManagerRef.current) {
       speechManagerRef.current = new SpeechPriorityManager({
-        play: (t, p) => {
-          // stopSpeaking() also bumps speakSeqRef (it invalidates whatever
-          // was previously in flight) — capturing `seq` must happen AFTER
-          // that call, not before. Capturing it first was a real bug: every
-          // utterance's own sequence number was immediately stale by the
-          // time its own audio fetch resolved (seq !== speakSeqRef.current
-          // was always true), so the fetched audio was silently discarded
-          // and onEnded() was never called, permanently locking the speech
-          // priority manager after the very first utterance in a session.
+        play: (t, p, customRate) => {
           stopSpeaking();
           const seq = ++speakSeqRef.current;
           const locale = localeFromVoice(voice);
+          const effectiveRate = customRate ?? voiceRate;
           api
-            .ttsAudioUrl(t, voice, voiceRate)
+            .ttsAudioUrl(t, voice, effectiveRate)
             .then((url) => {
               if (seq !== speakSeqRef.current) {
                 URL.revokeObjectURL(url);
@@ -487,6 +480,7 @@ function MainApp({
               ttsUrlRef.current = url;
               const audio = new Audio(url);
               ttsAudioRef.current = audio;
+              audio.playbackRate = 1.0;
               // Recognition must pause while we talk: the mic would hear our
               // own voice and could loop. Signal both edges here.
               audio.onplay = () => setSpeechActive(true);
@@ -497,6 +491,7 @@ function MainApp({
                   ttsUrlRef.current = null;
                 }
                 setSpeechActive(false);
+                fallbackSpeak(t, locale, effectiveRate);
                 speechManagerRef.current?.onEnded();
               };
               audio.onerror = () => {
@@ -506,7 +501,7 @@ function MainApp({
                   ttsUrlRef.current = null;
                 }
                 setSpeechActive(false);
-                fallbackSpeak(t, locale);
+                fallbackSpeak(t, locale, effectiveRate);
                 speechManagerRef.current?.onEnded();
               };
               audio.play().catch(() => {
@@ -515,21 +510,21 @@ function MainApp({
                   URL.revokeObjectURL(ttsUrlRef.current);
                   ttsUrlRef.current = null;
                 }
-                fallbackSpeak(t, locale);
+                fallbackSpeak(t, locale, effectiveRate);
                 setSpeechActive(false);
                 speechManagerRef.current?.onEnded();
               });
             })
             .catch(() => {
               if (seq !== speakSeqRef.current) return;
-              fallbackSpeak(t, locale);
+              fallbackSpeak(t, locale, effectiveRate);
               speechManagerRef.current?.onEnded();
             });
         },
         stop: () => stopSpeaking(),
       });
     }
-    speechManagerRef.current.speak({ text, priority, dedupeKey });
+    speechManagerRef.current.speak({ text, priority, dedupeKey, rate: rateOverride });
   }
 
   const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:4000';
@@ -602,11 +597,11 @@ function MainApp({
   });
 
   // Browser-speech fallback when the neural TTS service is unreachable.
-  function fallbackSpeak(text: string, locale?: string) {
+  function fallbackSpeak(text: string, locale?: string, rate?: number) {
     if (!('speechSynthesis' in window)) return;
     window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = voiceRate;
+    utterance.rate = Math.max(0.5, Math.min(2.0, rate ?? voiceRate));
     utterance.pitch = 1;
     utterance.lang = locale || 'en-US';
 
@@ -656,11 +651,11 @@ function MainApp({
   // voice if the service is unavailable.
   // High-quality neural speech with priority: default priority 5 (navigation).
   // Danger/emergency call sites pass higher priorities (1-3) which interrupt.
-  function speak(text: string, priority: SpeechPriority = 5, dedupeKey?: string) {
+  function speak(text: string, priority: SpeechPriority = 5, dedupeKey?: string, rateOverride?: number) {
     const cleanText = text.trim();
     if (!cleanText) return;
     lastSpokenRef.current = cleanText;
-    speakWithPriority(cleanText, priority, dedupeKey);
+    speakWithPriority(cleanText, priority, dedupeKey, rateOverride);
   }
 
   function stopSpeaking() {
@@ -1696,11 +1691,20 @@ function MainApp({
                   themeMode={themeMode}
                   onThemeChange={setThemeMode}
                   voiceRate={voiceRate}
-                  onVoiceRateChange={setVoiceRate}
+                  onVoiceRateChange={(updater) => {
+                    setVoiceRate((prev) => {
+                      const next = typeof updater === 'function' ? updater(prev) : updater;
+                      speak(getVoiceTestPhrase(voice), 4, 'test-voice-btn', next);
+                      return next;
+                    });
+                  }}
                   voice={voice}
                   voices={voices}
-                  onVoiceChange={setVoice}
-                  onTestVoice={() => speak('This is a test of the reading voice.', 4, 'test-voice-btn')}
+                  onVoiceChange={(v) => {
+                    setVoice(v);
+                    speak(getVoiceTestPhrase(v), 4, 'voice-change-test', voiceRate);
+                  }}
+                  onTestVoice={() => speak(getVoiceTestPhrase(voice), 4, 'test-voice-btn', voiceRate)}
                   hapticSettings={hapticSettings}
                   onHapticSettingsChange={setHapticSettings}
                   onTestHaptic={() => fireHapticEvent('hazard-nearby', hapticSettings)}
@@ -1772,11 +1776,14 @@ function MainApp({
           onVoiceChange={(v) => {
             setVoice(v);
           }}
+          onVoiceRateChange={(r) => {
+            setVoiceRate(r);
+          }}
           testVoice={() => {
             const phrase = getVoiceTestPhrase(voice);
-            speak(phrase, 4, 'test-voice-btn');
+            speak(phrase, 4, 'test-voice-btn', voiceRate);
           }}
-          speak={speak as (text: string, priority?: number, dedupeKey?: string) => void}
+          speak={speak as (text: string, priority?: number, dedupeKey?: string, rate?: number) => void}
           onComplete={(result: OnboardingResult) => {
             localStorage.setItem(onboardingKey, '1');
             setVoiceRate(result.speechRate);
@@ -1790,7 +1797,7 @@ function MainApp({
             setShowOnboarding(false);
             const msg = getStepSpeech('summary', chosenVoice);
             announce(msg || 'Setup complete.', 'online');
-            speak(msg || 'Setup complete.');
+            speak(msg || 'Setup complete.', 5, undefined, result.speechRate);
           }}
         />
       ) : null}
