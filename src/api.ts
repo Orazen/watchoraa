@@ -325,18 +325,21 @@ function handleOfflineFallback<T>(path: string, options: RequestInit = {}): T {
 
   if (path === '/api/auth/login') {
     const email = (body.email || '').trim().toLowerCase();
-    const password = body.password || '';
+    const password = (body.password || '').trim();
     const match = DEMO_ACCOUNTS[email];
-    if (match && match.password === password) {
-      setSession(`demo-token-${match.user.role.toLowerCase()}`, `demo-refresh-${match.user.role.toLowerCase()}`);
-      setCachedUser(match.user);
-      return { token: `demo-token-${match.user.role.toLowerCase()}`, refreshToken: 'demo-refresh', user: match.user } as T;
+    if (match) {
+      if (match.password === password) {
+        setSession(`demo-token-${match.user.role.toLowerCase()}`, `demo-refresh-${match.user.role.toLowerCase()}`);
+        setCachedUser(match.user);
+        return { token: `demo-token-${match.user.role.toLowerCase()}`, refreshToken: 'demo-refresh', user: match.user } as T;
+      }
+      throw new ApiError('Incorrect email or password', 401);
     }
     // Allow standard fallback login
     const user: PublicUser = {
       id: `usr_${Date.now()}`,
-      email: body.email || 'user@watchora.app',
-      fullName: (body.email ? body.email.split('@')[0] : 'Demo User'),
+      email: email || 'user@watchora.app',
+      fullName: (email ? email.split('@')[0] : 'Demo User'),
       role: email.includes('admin') ? 'ADMIN' : email.includes('care') ? 'CAREGIVER' : 'BLIND_USER',
       preferredLanguage: 'en',
     };
@@ -597,11 +600,17 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
+      if (response.status === 404 || response.status === 405 || response.status === 502 || response.status === 503 || response.status === 504) {
+        return handleOfflineFallback<T>(path, options);
+      }
       throw new ApiError(typeof body.error === 'string' ? body.error : `Request failed (${response.status})`, response.status);
     }
     return body as T;
   } catch (error) {
     if (error instanceof ApiError) {
+      if (error.status === 404 || error.status === 405 || error.status >= 500) {
+        return handleOfflineFallback<T>(path, options);
+      }
       throw error;
     }
     // Network error (e.g. backend not deployed / running on Vercel demo)
