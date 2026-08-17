@@ -198,10 +198,10 @@ export class PermissionService {
   }
 
   private async requestMedia(kind: 'audio' | 'video'): Promise<PermissionState> {
-    const gUM = this.browser.navigator.mediaDevices?.getUserMedia;
-    if (!gUM) return 'browser-unsupported';
+    const md = this.browser.navigator.mediaDevices;
+    if (!md || typeof md.getUserMedia !== 'function') return 'browser-unsupported';
     try {
-      const stream = await gUM(kind === 'audio' ? { audio: true } : { video: { facingMode: 'environment' } });
+      const stream = await md.getUserMedia(kind === 'audio' ? { audio: true } : { video: { facingMode: 'environment' } });
       // Immediately stop the stream: we only needed it to confirm the permission.
       for (const track of stream.getTracks()) track.stop();
       return 'allowed';
@@ -215,25 +215,47 @@ export class PermissionService {
 
   private requestLocation(): Promise<PermissionState> {
     return new Promise((resolve) => {
-      const geo = this.browser.navigator.geolocation?.getCurrentPosition;
-      if (!geo) {
+      const geolocation = this.browser.navigator.geolocation;
+      if (!geolocation || typeof geolocation.getCurrentPosition !== 'function') {
         resolve('browser-unsupported');
         return;
       }
-      geo(
-        (pos) => {
-          const accuracy = Math.round(pos.coords.accuracy);
-          this.byKey.location.detail = `Accuracy approximately ${accuracy} metres.`;
-          resolve(accuracy > 100 ? 'temporarily-unavailable' : 'allowed');
-        },
-        (err) => {
-          const code = (err as { code?: number })?.code;
-          if (code === 1) resolve('denied');
-          else if (code === 2) resolve('temporarily-unavailable');
-          else resolve('unavailable');
-        },
-        { enableHighAccuracy: true, timeout: 10_000, maximumAge: 0 },
-      );
+      let settled = false;
+      const timer = setTimeout(() => {
+        if (!settled) {
+          settled = true;
+          resolve('temporarily-unavailable');
+        }
+      }, 7000);
+
+      try {
+        geolocation.getCurrentPosition(
+          (pos) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            const accuracy = Math.round(pos.coords.accuracy);
+            this.byKey.location.detail = `Accuracy approximately ${accuracy} metres.`;
+            resolve('allowed');
+          },
+          (err) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            const code = (err as { code?: number })?.code;
+            if (code === 1) resolve('denied');
+            else if (code === 2) resolve('temporarily-unavailable');
+            else resolve('unavailable');
+          },
+          { enableHighAccuracy: false, timeout: 6000, maximumAge: 60000 },
+        );
+      } catch {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          resolve('temporarily-unavailable');
+        }
+      }
     });
   }
 

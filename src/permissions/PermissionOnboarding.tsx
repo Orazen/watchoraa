@@ -5,12 +5,13 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { describePermissionState, type PermissionService } from './permissionService';
-import type { PermissionKey } from './permissionTypes';
+import type { PermissionKey, PermissionState } from './permissionTypes';
 import { useLiveAnnouncer } from '../accessibility/LiveAnnouncer';
 import { useFocusTrap } from '../accessibility/FocusManager';
 
 export type OnboardingResult = {
   speechRate: number;
+  selectedVoice?: string;
   hapticsEnabled: boolean;
   toneEnabled: boolean;
   intensity: 'low' | 'medium' | 'high';
@@ -36,13 +37,18 @@ export function PermissionOnboarding({
   onComplete,
   speak,
   testVoice,
+  voice = 'en-US-JennyNeural',
+  onVoiceChange,
 }: {
   service: PermissionService;
   onComplete: (result: OnboardingResult) => void;
   speak: (text: string, priority?: number, dedupeKey?: string) => void;
   testVoice: () => void;
+  voice?: string;
+  onVoiceChange?: (newVoice: string) => void;
 }) {
   const [step, setStep] = useState<Step>('welcome');
+  const [currentVoice, setCurrentVoice] = useState(voice);
   const [speechRate, setSpeechRate] = useState(1.05);
   const [hapticsEnabled, setHapticsEnabled] = useState(true);
   const [toneEnabled, setToneEnabled] = useState(true);
@@ -62,7 +68,7 @@ export function PermissionOnboarding({
     spokenRef.current = step;
     const timer = setTimeout(() => {
       if (step === 'welcome') speak(WELCOME_SPEECH, 6, 'onboarding-welcome');
-      else if (step === 'audio') speak('First, let us test Watchora’s voice. You should hear this message clearly.', 6, 'onboarding-audio');
+      else if (step === 'audio') speak('First, let us test Watchora’s voice. You can select your voice and speed below.', 6, 'onboarding-audio');
       else if (step === 'microphone')
         speak('Microphone access allows you to control Watchora using your voice. Your microphone is used only while voice control is active.', 6, 'onboarding-mic');
       else if (step === 'camera')
@@ -94,15 +100,23 @@ export function PermissionOnboarding({
 
   async function requestAndAdvance(key: PermissionKey, next: Step) {
     setRequesting(key);
-    const state = await service.request(key);
-    setRequesting(null);
-    announce(`${service.get(key).label}: ${describePermissionState(state)}`, state === 'allowed' ? 'polite' : 'assertive');
-    if (key === 'microphone' && state === 'allowed') setMicTested(true);
-    setStep(next);
+    try {
+      const state = await Promise.race([
+        service.request(key),
+        new Promise<PermissionState>((res) => setTimeout(() => res('temporarily-unavailable'), 6000)),
+      ]);
+      announce(`${service.get(key).label}: ${describePermissionState(state)}`, state === 'allowed' ? 'polite' : 'assertive');
+      if (key === 'microphone' && state === 'allowed') setMicTested(true);
+    } catch {
+      // ignore
+    } finally {
+      setRequesting(null);
+      setStep(next);
+    }
   }
 
   function finish() {
-    onComplete({ speechRate, hapticsEnabled, toneEnabled, intensity, onboardingComplete: true });
+    onComplete({ speechRate, selectedVoice: currentVoice, hapticsEnabled, toneEnabled, intensity, onboardingComplete: true });
   }
 
   return (
@@ -129,11 +143,65 @@ export function PermissionOnboarding({
         {step === 'audio' && (
           <div className="form-stack">
             <p className="tiny-print" role="status" aria-live="polite">
-              First, let us test Watchora’s voice. You should hear this message clearly.
+              Select your preferred voice and speed, then press Test Voice to listen.
             </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', width: '100%' }}>
+              <label htmlFor="onboarding-voice-select" style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted, #aaa)' }}>
+                Preferred Voice:
+              </label>
+              <select
+                id="onboarding-voice-select"
+                value={currentVoice}
+                onChange={(e) => {
+                  const newV = e.target.value;
+                  setCurrentVoice(newV);
+                  onVoiceChange?.(newV);
+                }}
+                aria-label="Select voice"
+                style={{
+                  width: '100%',
+                  padding: '0.65rem 0.8rem',
+                  borderRadius: '8px',
+                  background: 'var(--card-bg, #222)',
+                  color: 'var(--text-color, #fff)',
+                  border: '1px solid var(--border-color, #444)',
+                  fontSize: '0.95rem',
+                }}
+              >
+                <optgroup label="English">
+                  <option value="en-US-JennyNeural">👩 English (US) — Jenny (Warm & Natural)</option>
+                  <option value="en-US-GuyNeural">👨 English (US) — Guy (Calm & Clear)</option>
+                  <option value="en-US-AriaNeural">👩 English (US) — Aria (Expressive)</option>
+                  <option value="en-GB-LibbyNeural">👩 English (UK) — Libby</option>
+                  <option value="en-GB-RyanNeural">👨 English (UK) — Ryan</option>
+                  <option value="en-IN-NeerjaNeural">👩 English (India) — Neerja</option>
+                  <option value="en-IN-PrabhatNeural">👨 English (India) — Prabhat</option>
+                  <option value="en-AU-NatashaNeural">👩 English (Australia) — Natasha</option>
+                </optgroup>
+                <optgroup label="Indian Languages">
+                  <option value="hi-IN-SwaraNeural">👩 Hindi — Swara</option>
+                  <option value="hi-IN-MadhurNeural">👨 Hindi — Madhur</option>
+                  <option value="ta-IN-PallaviNeural">👩 Tamil — Pallavi</option>
+                  <option value="ta-IN-ValluvarNeural">👨 Tamil — Valluvar</option>
+                  <option value="te-IN-ShrutiNeural">👩 Telugu — Shruti</option>
+                  <option value="te-IN-MohanNeural">👨 Telugu — Mohan</option>
+                  <option value="kn-IN-SapnaNeural">👩 Kannada — Sapna</option>
+                  <option value="ml-IN-SobhanaNeural">👩 Malayalam — Sobhana</option>
+                  <option value="bn-IN-TanishaaNeural">👩 Bengali — Tanishaa</option>
+                  <option value="gu-IN-DhwaniNeural">👩 Gujarati — Dhwani</option>
+                  <option value="mr-IN-AarohiNeural">👩 Marathi — Aarohi</option>
+                  <option value="ur-IN-GulNeural">👩 Urdu — Gul</option>
+                </optgroup>
+                <optgroup label="Other Languages">
+                  <option value="es-ES-ElviraNeural">👩 Spanish — Elvira</option>
+                  <option value="fr-FR-DeniseNeural">👩 French — Denise</option>
+                  <option value="de-DE-KatjaNeural">👩 German — Katja</option>
+                </optgroup>
+              </select>
+            </div>
             <div className="control-inline">
               <button className="secondary-btn" onClick={testVoice}>
-                <span aria-hidden="true">🔊</span> Repeat voice
+                <span aria-hidden="true">🔊</span> Test voice
               </button>
               <button className="ghost-btn" onClick={() => setSpeechRate((v) => Math.max(0.7, Number((v - 0.1).toFixed(2))))}>
                 − Slower

@@ -536,7 +536,33 @@ function handleOfflineFallback<T>(path: string, options: RequestInit = {}): T {
   if (path === '/api/admin/assistance') return { requests: [] } as T;
   if (path.startsWith('/api/audit-logs')) return { logs: [] } as T;
   if (path === '/api/caregiver/overview') return { peopleCount: 1, openSosCount: 0, recentJourneys: [], contacts: [] } as T;
-  if (path === '/api/tts/voices') return { voices: [], count: 0 } as T;
+  if (path === '/api/tts/voices') {
+    const list: TtsVoice[] = [
+      { shortName: 'en-US-JennyNeural', locale: 'en-US', language: 'English (US)', native: 'English (US)', gender: 'Female' },
+      { shortName: 'en-US-GuyNeural', locale: 'en-US', language: 'English (US)', native: 'English (US)', gender: 'Male' },
+      { shortName: 'en-GB-LibbyNeural', locale: 'en-GB', language: 'English (UK)', native: 'English (UK)', gender: 'Female' },
+      { shortName: 'en-GB-RyanNeural', locale: 'en-GB', language: 'English (UK)', native: 'English (UK)', gender: 'Male' },
+      { shortName: 'en-IN-NeerjaNeural', locale: 'en-IN', language: 'English (India)', native: 'English (India)', gender: 'Female' },
+      { shortName: 'en-IN-PrabhatNeural', locale: 'en-IN', language: 'English (India)', native: 'English (India)', gender: 'Male' },
+      { shortName: 'hi-IN-SwaraNeural', locale: 'hi-IN', language: 'Hindi', native: 'हिन्दी', gender: 'Female' },
+      { shortName: 'hi-IN-MadhurNeural', locale: 'hi-IN', language: 'Hindi', native: 'हिन्दी', gender: 'Male' },
+      { shortName: 'ta-IN-PallaviNeural', locale: 'ta-IN', language: 'Tamil', native: 'தமிழ்', gender: 'Female' },
+      { shortName: 'ta-IN-ValluvarNeural', locale: 'ta-IN', language: 'Tamil', native: 'தமிழ்', gender: 'Male' },
+      { shortName: 'te-IN-ShrutiNeural', locale: 'te-IN', language: 'Telugu', native: 'తెలుగు', gender: 'Female' },
+      { shortName: 'te-IN-MohanNeural', locale: 'te-IN', language: 'Telugu', native: 'తెలుగు', gender: 'Male' },
+      { shortName: 'kn-IN-SapnaNeural', locale: 'kn-IN', language: 'Kannada', native: 'ಕನ್ನಡ', gender: 'Female' },
+      { shortName: 'kn-IN-GaganNeural', locale: 'kn-IN', language: 'Kannada', native: 'ಕನ್ನಡ', gender: 'Male' },
+      { shortName: 'ml-IN-SobhanaNeural', locale: 'ml-IN', language: 'Malayalam', native: 'മലയാളം', gender: 'Female' },
+      { shortName: 'ml-IN-MidhunNeural', locale: 'ml-IN', language: 'Malayalam', native: 'മലയാളം', gender: 'Male' },
+      { shortName: 'bn-IN-TanishaaNeural', locale: 'bn-IN', language: 'Bengali', native: 'বাংলা', gender: 'Female' },
+      { shortName: 'bn-IN-BashkarNeural', locale: 'bn-IN', language: 'Bengali', native: 'বাংলা', gender: 'Male' },
+      { shortName: 'es-ES-ElviraNeural', locale: 'es-ES', language: 'Spanish (Spain)', native: 'Español', gender: 'Female' },
+      { shortName: 'es-ES-AlvaroNeural', locale: 'es-ES', language: 'Spanish (Spain)', native: 'Español', gender: 'Male' },
+      { shortName: 'fr-FR-DeniseNeural', locale: 'fr-FR', language: 'French', native: 'Français', gender: 'Female' },
+      { shortName: 'de-DE-KatjaNeural', locale: 'de-DE', language: 'German', native: 'Deutsch', gender: 'Female' },
+    ];
+    return { voices: list, count: list.length } as T;
+  }
   if (path === '/api/safe-journey/active') return { journey: null } as T;
   if (path === '/api/emergency/active') return { session: null } as T;
   if (path === '/api/ai/intent') {

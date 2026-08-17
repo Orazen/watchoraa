@@ -608,11 +608,35 @@ function MainApp({
     utterance.rate = voiceRate;
     utterance.pitch = 1;
     if (locale) utterance.lang = locale;
+
+    // Pick best browser voice
+    const voices = window.speechSynthesis.getVoices();
+    if (voices && voices.length > 0) {
+      const isMale = voice.toLowerCase().includes('guy') || voice.toLowerCase().includes('ryan') || voice.toLowerCase().includes('prabhat') || voice.toLowerCase().includes('madhur') || voice.toLowerCase().includes('valluvar') || voice.toLowerCase().includes('mohan') || voice.toLowerCase().includes('gagan') || voice.toLowerCase().includes('midhun') || voice.toLowerCase().includes('bashkar') || voice.toLowerCase().includes('alvaro') || voice.toLowerCase().includes('katja');
+      const langPrefix = (locale || 'en').split('-')[0].toLowerCase();
+      const langVoices = voices.filter((v) => v.lang.toLowerCase().startsWith(langPrefix));
+      const pool = langVoices.length > 0 ? langVoices : voices;
+
+      const preferred = pool.find((v) => {
+        const name = v.name.toLowerCase();
+        if (isMale && (name.includes('guy') || name.includes('daniel') || name.includes('male') || name.includes('david') || name.includes('george') || name.includes('rishi'))) return true;
+        if (!isMale && (name.includes('jenny') || name.includes('samantha') || name.includes('karen') || name.includes('female') || name.includes('victoria') || name.includes('zira') || name.includes('veena'))) return true;
+        return /natural|premium|enhanced|google|apple/i.test(name);
+      });
+      if (preferred) utterance.voice = preferred;
+    }
+
     // Signal the voice provider so microphone recognition pauses while we
     // talk (the mic would otherwise hear our own voice and could loop).
     utterance.onstart = () => setSpeechActive(true);
-    utterance.onend = () => setSpeechActive(false);
-    utterance.onerror = () => setSpeechActive(false);
+    utterance.onend = () => {
+      setSpeechActive(false);
+      speechManagerRef.current?.onEnded();
+    };
+    utterance.onerror = () => {
+      setSpeechActive(false);
+      speechManagerRef.current?.onEnded();
+    };
     window.speechSynthesis.speak(utterance);
   }
 
@@ -1733,11 +1757,17 @@ function MainApp({
       {showOnboarding ? (
         <PermissionOnboarding
           service={permissionService}
-          testVoice={() => speak('This is a test of the reading voice.', 4, 'test-voice-btn')}
+          voice={voice}
+          onVoiceChange={(v) => {
+            setVoice(v);
+            speak('Voice updated.', 4, 'voice-change-test');
+          }}
+          testVoice={() => speak('This is a test of the Watchora voice. You should hear this message clearly.', 4, 'test-voice-btn')}
           speak={speak as (text: string, priority?: number, dedupeKey?: string) => void}
           onComplete={(result: OnboardingResult) => {
             localStorage.setItem(onboardingKey, '1');
             setVoiceRate(result.speechRate);
+            if (result.selectedVoice) setVoice(result.selectedVoice);
             setHapticSettings({
               hapticsEnabled: result.hapticsEnabled,
               toneEnabled: result.toneEnabled,
