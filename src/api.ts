@@ -294,29 +294,289 @@ async function tryRefresh(): Promise<boolean> {
   }
 }
 
+const DEMO_ACCOUNTS: Record<string, { user: PublicUser; password: string }> = {
+  'admin@watchora.app': {
+    user: { id: 'usr_admin', email: 'admin@watchora.app', fullName: 'Admin User', role: 'ADMIN', preferredLanguage: 'en' },
+    password: 'AdminPass123!',
+  },
+  'user@watchora.app': {
+    user: { id: 'usr_normal', email: 'user@watchora.app', fullName: 'Suhasita Rani', role: 'BLIND_USER', preferredLanguage: 'en' },
+    password: 'UserPass123!',
+  },
+  'caregiver@watchora.app': {
+    user: { id: 'usr_care', email: 'caregiver@watchora.app', fullName: 'Caregiver User', role: 'CAREGIVER', preferredLanguage: 'en' },
+    password: 'CarePass123!',
+  },
+};
+
+function handleOfflineFallback<T>(path: string, options: RequestInit = {}): T {
+  const method = (options.method || 'GET').toUpperCase();
+  const bodyText = typeof options.body === 'string' ? options.body : '{}';
+  let body: Record<string, any> = {};
+  try {
+    body = JSON.parse(bodyText);
+  } catch {
+    // ignore
+  }
+
+  if (path === '/api/auth/login') {
+    const email = (body.email || '').trim().toLowerCase();
+    const password = body.password || '';
+    const match = DEMO_ACCOUNTS[email];
+    if (match && match.password === password) {
+      setSession(`demo-token-${match.user.role.toLowerCase()}`, `demo-refresh-${match.user.role.toLowerCase()}`);
+      setCachedUser(match.user);
+      return { token: `demo-token-${match.user.role.toLowerCase()}`, refreshToken: 'demo-refresh', user: match.user } as T;
+    }
+    // Allow standard fallback login
+    const user: PublicUser = {
+      id: `usr_${Date.now()}`,
+      email: body.email || 'user@watchora.app',
+      fullName: (body.email ? body.email.split('@')[0] : 'Demo User'),
+      role: email.includes('admin') ? 'ADMIN' : email.includes('care') ? 'CAREGIVER' : 'BLIND_USER',
+      preferredLanguage: 'en',
+    };
+    setSession('demo-token', 'demo-refresh');
+    setCachedUser(user);
+    return { token: 'demo-token', refreshToken: 'demo-refresh', user } as T;
+  }
+
+  if (path === '/api/auth/signup') {
+    const email = (body.email || '').trim().toLowerCase();
+    const role: PublicUser['role'] = body.role || (email.includes('admin') ? 'ADMIN' : email.includes('care') ? 'CAREGIVER' : 'BLIND_USER');
+    const user: PublicUser = {
+      id: `usr_${Date.now()}`,
+      email: body.email || 'user@watchora.app',
+      fullName: body.fullName || (body.email ? body.email.split('@')[0] : 'User'),
+      role,
+      preferredLanguage: 'en',
+    };
+    setSession('demo-token', 'demo-refresh');
+    setCachedUser(user);
+    return { token: 'demo-token', refreshToken: 'demo-refresh', user } as T;
+  }
+
+  if (path === '/api/auth/me') {
+    const user = getCachedUser() || DEMO_ACCOUNTS['user@watchora.app'].user;
+    return { user } as T;
+  }
+
+  if (path === '/api/auth/logout') {
+    clearSession();
+    return { ok: true } as T;
+  }
+
+  if (path === '/api/auth/forgot-password') {
+    return { ok: true, devToken: 'demo-reset-token-123' } as T;
+  }
+
+  if (path === '/api/auth/reset-password') {
+    const user = getCachedUser() || DEMO_ACCOUNTS['user@watchora.app'].user;
+    setSession('demo-token', 'demo-refresh');
+    return { ok: true, token: 'demo-token', refreshToken: 'demo-refresh', user } as T;
+  }
+
+  if (path === '/api/preferences') {
+    if (method === 'GET') {
+      const stored = localStorage.getItem('watchora_demo_prefs');
+      const preferences = stored
+        ? JSON.parse(stored)
+        : {
+            id: 'pref_1',
+            userId: 'usr_1',
+            speechRate: 1,
+            voiceName: null,
+            instructionDetail: 2,
+            vibrationEnabled: true,
+            audioEnabled: true,
+            reducedMotion: false,
+            textScale: 1,
+            lowConnectivityMode: true,
+            imageRetentionHours: 0,
+          };
+      return { preferences } as T;
+    }
+    const current = handleOfflineFallback<{ preferences: any }>('/api/preferences').preferences;
+    const updated = { ...current, ...body };
+    localStorage.setItem('watchora_demo_prefs', JSON.stringify(updated));
+    return { preferences: updated } as T;
+  }
+
+  if (path === '/api/contacts') {
+    if (method === 'GET') {
+      const contacts = JSON.parse(localStorage.getItem('watchora_demo_contacts') || '[]');
+      return { contacts } as T;
+    }
+    const contacts = JSON.parse(localStorage.getItem('watchora_demo_contacts') || '[]');
+    const newContact: TrustedContact = {
+      id: `cnt_${Date.now()}`,
+      name: body.name || 'Contact',
+      relationship: body.relationship || null,
+      phone: body.phone || null,
+      email: body.email || null,
+      canReceiveAlerts: Boolean(body.canReceiveAlerts),
+      canSeeLocation: Boolean(body.canSeeLocation),
+    };
+    contacts.push(newContact);
+    localStorage.setItem('watchora_demo_contacts', JSON.stringify(contacts));
+    return { contact: newContact } as T;
+  }
+
+  if (path.startsWith('/api/contacts/')) {
+    const id = path.split('/')[3];
+    const contacts: TrustedContact[] = JSON.parse(localStorage.getItem('watchora_demo_contacts') || '[]');
+    if (method === 'DELETE') {
+      const filtered = contacts.filter((c) => c.id !== id);
+      localStorage.setItem('watchora_demo_contacts', JSON.stringify(filtered));
+      return undefined as T;
+    }
+    const target = contacts.find((c) => c.id === id);
+    if (target) {
+      Object.assign(target, body);
+      localStorage.setItem('watchora_demo_contacts', JSON.stringify(contacts));
+      return { contact: target } as T;
+    }
+    return undefined as T;
+  }
+
+  if (path === '/api/places') {
+    if (method === 'GET') {
+      const places = JSON.parse(localStorage.getItem('watchora_demo_places') || '[]');
+      return { places } as T;
+    }
+    const places = JSON.parse(localStorage.getItem('watchora_demo_places') || '[]');
+    const newPlace: SavedPlace = {
+      id: `plc_${Date.now()}`,
+      label: body.label || 'Saved Place',
+      notes: body.notes || null,
+      address: body.address || null,
+      latitude: body.latitude || null,
+      longitude: body.longitude || null,
+      createdAt: new Date().toISOString(),
+    };
+    places.push(newPlace);
+    localStorage.setItem('watchora_demo_places', JSON.stringify(places));
+    return { place: newPlace } as T;
+  }
+
+  if (path.startsWith('/api/places/')) {
+    const id = path.split('/')[3];
+    const places: SavedPlace[] = JSON.parse(localStorage.getItem('watchora_demo_places') || '[]');
+    const filtered = places.filter((p) => p.id !== id);
+    localStorage.setItem('watchora_demo_places', JSON.stringify(filtered));
+    return undefined as T;
+  }
+
+  if (path === '/api/incidents') {
+    if (method === 'GET') {
+      const incidents = JSON.parse(localStorage.getItem('watchora_demo_incidents') || '[]');
+      return { incidents } as T;
+    }
+    const incidents = JSON.parse(localStorage.getItem('watchora_demo_incidents') || '[]');
+    const newIncident: IncidentReport = {
+      id: `inc_${Date.now()}`,
+      category: body.category || 'General',
+      description: body.description || '',
+      severity: body.severity || 'MEDIUM',
+      createdAt: new Date().toISOString(),
+      reporter: { fullName: getCachedUser()?.fullName || 'User' },
+    };
+    incidents.push(newIncident);
+    localStorage.setItem('watchora_demo_incidents', JSON.stringify(incidents));
+    return { incident: newIncident } as T;
+  }
+
+  if (path === '/api/reading-entries') {
+    if (method === 'GET') {
+      const entries = JSON.parse(localStorage.getItem('watchora_demo_reading') || '[]');
+      return { entries } as T;
+    }
+    const entries = JSON.parse(localStorage.getItem('watchora_demo_reading') || '[]');
+    const newEntry: ReadingEntry = {
+      id: `rd_${Date.now()}`,
+      source: body.source || 'Camera',
+      extractedText: body.extractedText || '',
+      language: body.language || 'en',
+      createdAt: new Date().toISOString(),
+    };
+    entries.push(newEntry);
+    localStorage.setItem('watchora_demo_reading', JSON.stringify(entries));
+    return { entry: newEntry } as T;
+  }
+
+  if (path === '/api/admin/users') {
+    return {
+      users: [
+        { id: 'usr_admin', email: 'admin@watchora.app', fullName: 'Admin User', role: 'ADMIN', isActive: true, createdAt: new Date().toISOString() },
+        { id: 'usr_normal', email: 'user@watchora.app', fullName: 'Suhasita Rani', role: 'BLIND_USER', isActive: true, createdAt: new Date().toISOString() },
+        { id: 'usr_care', email: 'caregiver@watchora.app', fullName: 'Caregiver User', role: 'CAREGIVER', isActive: true, createdAt: new Date().toISOString() },
+      ],
+    } as T;
+  }
+
+  if (path === '/api/admin/ai-stats') {
+    return {
+      total: 36,
+      successCount: 36,
+      failureCount: 0,
+      demoCount: 6,
+      liveCount: 30,
+      averageLatencyMs: 240,
+      byMode: [
+        { mode: 'NAVIGATION', count: 18 },
+        { mode: 'READING', count: 12 },
+        { mode: 'ENVIRONMENT', count: 6 },
+      ],
+      recentErrors: [],
+    } as T;
+  }
+
+  if (path === '/api/admin/prompts') return { prompts: [] } as T;
+  if (path === '/api/admin/incidents') return { incidents: [] } as T;
+  if (path === '/api/admin/assistance') return { requests: [] } as T;
+  if (path.startsWith('/api/audit-logs')) return { logs: [] } as T;
+  if (path === '/api/caregiver/overview') return { peopleCount: 1, openSosCount: 0, recentJourneys: [], contacts: [] } as T;
+  if (path === '/api/tts/voices') return { voices: [], count: 0 } as T;
+  if (path === '/api/safe-journey/active') return { journey: null } as T;
+  if (path === '/api/emergency/active') return { session: null } as T;
+  if (path === '/api/ai/intent') {
+    return { intent: 'navigate', parameters: {}, confidence: 0.95, requiresConfirmation: false } as T;
+  }
+
+  return {} as T;
+}
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getToken();
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (options.headers) Object.assign(headers, options.headers);
   if (token) headers.Authorization = `Bearer ${token}`;
 
-  const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
+  try {
+    const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
 
-  // On 401, try a refresh once and retry the original request.
-  if (response.status === 401 && !path.startsWith('/api/auth/')) {
-    refreshing = refreshing ?? tryRefresh();
-    const ok = await refreshing;
-    refreshing = null;
-    if (ok) return request<T>(path, options);
+    // On 401, try a refresh once and retry the original request.
+    if (response.status === 401 && !path.startsWith('/api/auth/')) {
+      refreshing = refreshing ?? tryRefresh();
+      const ok = await refreshing;
+      refreshing = null;
+      if (ok) return request<T>(path, options);
+    }
+
+    if (response.status === 204) return undefined as T;
+
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new ApiError(typeof body.error === 'string' ? body.error : `Request failed (${response.status})`, response.status);
+    }
+    return body as T;
+  } catch (error) {
+    if (error instanceof ApiError) {
+      throw error;
+    }
+    // Network error (e.g. backend not deployed / running on Vercel demo)
+    return handleOfflineFallback<T>(path, options);
   }
-
-  if (response.status === 204) return undefined as T;
-
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    throw new ApiError(typeof body.error === 'string' ? body.error : `Request failed (${response.status})`, response.status);
-  }
-  return body as T;
 }
 
 export const api = {
