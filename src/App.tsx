@@ -43,6 +43,7 @@ import { HELP_MESSAGE } from './voice/voiceTypes';
 import type { VoiceBridge } from './VoiceFirstShell';
 import { LandingPage } from './LandingPage';
 import { VoiceFirstShell, createVoiceBridge, usePermissionService } from './VoiceFirstShell';
+import { getVoiceTestPhrase, getStepSpeech } from './voice/voicePhrases';
 
 import { MapView } from './MapView';
 type TabKey = 'home' | 'tracking' | 'routes' | 'journey' | 'sos' | 'community' | 'caregiver' | 'settings' | 'admin';
@@ -607,7 +608,7 @@ function MainApp({
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = voiceRate;
     utterance.pitch = 1;
-    if (locale) utterance.lang = locale;
+    utterance.lang = locale || 'en-US';
 
     // Pick best browser voice
     const voices = window.speechSynthesis.getVoices();
@@ -615,15 +616,25 @@ function MainApp({
       const isMale = voice.toLowerCase().includes('guy') || voice.toLowerCase().includes('ryan') || voice.toLowerCase().includes('prabhat') || voice.toLowerCase().includes('madhur') || voice.toLowerCase().includes('valluvar') || voice.toLowerCase().includes('mohan') || voice.toLowerCase().includes('gagan') || voice.toLowerCase().includes('midhun') || voice.toLowerCase().includes('bashkar') || voice.toLowerCase().includes('alvaro') || voice.toLowerCase().includes('katja');
       const langPrefix = (locale || 'en').split('-')[0].toLowerCase();
       const langVoices = voices.filter((v) => v.lang.toLowerCase().startsWith(langPrefix));
-      const pool = langVoices.length > 0 ? langVoices : voices;
 
-      const preferred = pool.find((v) => {
-        const name = v.name.toLowerCase();
-        if (isMale && (name.includes('guy') || name.includes('daniel') || name.includes('male') || name.includes('david') || name.includes('george') || name.includes('rishi'))) return true;
-        if (!isMale && (name.includes('jenny') || name.includes('samantha') || name.includes('karen') || name.includes('female') || name.includes('victoria') || name.includes('zira') || name.includes('veena'))) return true;
-        return /natural|premium|enhanced|google|apple/i.test(name);
-      });
-      if (preferred) utterance.voice = preferred;
+      if (langVoices.length > 0) {
+        const preferred = langVoices.find((v) => {
+          const name = v.name.toLowerCase();
+          if (isMale && (name.includes('male') || name.includes('madhur') || name.includes('neel') || name.includes('hemant') || name.includes('valluvar') || name.includes('mohan') || name.includes('gagan') || name.includes('midhun') || name.includes('bashkar') || name.includes('alvaro') || name.includes('guy') || name.includes('david'))) return true;
+          if (!isMale && (name.includes('female') || name.includes('swara') || name.includes('lekha') || name.includes('veena') || name.includes('pallavi') || name.includes('shruti') || name.includes('sapna') || name.includes('sobhana') || name.includes('tanishaa') || name.includes('dhwani') || name.includes('elvira') || name.includes('jenny') || name.includes('samantha'))) return true;
+          return /natural|premium|enhanced|google|apple/i.test(name);
+        }) || langVoices[0];
+        utterance.voice = preferred;
+        utterance.lang = preferred.lang || locale || 'en-US';
+      } else {
+        const preferred = voices.find((v) => {
+          const name = v.name.toLowerCase();
+          if (isMale && (name.includes('guy') || name.includes('daniel') || name.includes('male') || name.includes('david'))) return true;
+          if (!isMale && (name.includes('jenny') || name.includes('samantha') || name.includes('karen') || name.includes('female') || name.includes('victoria') || name.includes('zira'))) return true;
+          return /natural|premium|enhanced|google|apple/i.test(name);
+        });
+        if (preferred) utterance.voice = preferred;
+      }
     }
 
     // Signal the voice provider so microphone recognition pauses while we
@@ -1760,13 +1771,16 @@ function MainApp({
           voice={voice}
           onVoiceChange={(v) => {
             setVoice(v);
-            speak('Voice updated.', 4, 'voice-change-test');
           }}
-          testVoice={() => speak('This is a test of the Watchora voice. You should hear this message clearly.', 4, 'test-voice-btn')}
+          testVoice={() => {
+            const phrase = getVoiceTestPhrase(voice);
+            speak(phrase, 4, 'test-voice-btn');
+          }}
           speak={speak as (text: string, priority?: number, dedupeKey?: string) => void}
           onComplete={(result: OnboardingResult) => {
             localStorage.setItem(onboardingKey, '1');
             setVoiceRate(result.speechRate);
+            const chosenVoice = result.selectedVoice || voice;
             if (result.selectedVoice) setVoice(result.selectedVoice);
             setHapticSettings({
               hapticsEnabled: result.hapticsEnabled,
@@ -1774,8 +1788,9 @@ function MainApp({
               intensity: result.intensity,
             });
             setShowOnboarding(false);
-            announce('Setup complete. You can start with the Assist tab.', 'online');
-            speak('Setup complete. You can start with the Assist tab.');
+            const msg = getStepSpeech('summary', chosenVoice);
+            announce(msg || 'Setup complete.', 'online');
+            speak(msg || 'Setup complete.');
           }}
         />
       ) : null}

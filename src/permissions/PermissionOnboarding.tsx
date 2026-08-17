@@ -29,8 +29,7 @@ type Step =
   | 'battery'
   | 'summary';
 
-const WELCOME_SPEECH =
-  'Welcome to Watchora. I can help describe your surroundings, read text, guide journeys, and contact trusted people in an emergency. Activate Start Watchora to check the permissions needed for your selected features.';
+import { getStepSpeech, getVoiceTestPhrase } from '../voice/voicePhrases';
 
 export function PermissionOnboarding({
   service,
@@ -43,7 +42,7 @@ export function PermissionOnboarding({
   service: PermissionService;
   onComplete: (result: OnboardingResult) => void;
   speak: (text: string, priority?: number, dedupeKey?: string) => void;
-  testVoice: () => void;
+  testVoice?: () => void;
   voice?: string;
   onVoiceChange?: (newVoice: string) => void;
 }) {
@@ -61,42 +60,21 @@ export function PermissionOnboarding({
 
   useFocusTrap(containerRef, true);
 
-  // Speak the current step once as it appears.
+  // Speak the current step once as it appears in the selected language.
   const spokenRef = useRef<string>('');
   useEffect(() => {
-    if (spokenRef.current === step) return;
-    spokenRef.current = step;
+    const key = `${step}-${currentVoice}`;
+    if (spokenRef.current === key) return;
+    spokenRef.current = key;
     const timer = setTimeout(() => {
-      if (step === 'welcome') speak(WELCOME_SPEECH, 6, 'onboarding-welcome');
-      else if (step === 'audio') speak('First, let us test Watchora’s voice. You can select your voice and speed below.', 6, 'onboarding-audio');
-      else if (step === 'microphone')
-        speak('Microphone access allows you to control Watchora using your voice. Your microphone is used only while voice control is active.', 6, 'onboarding-mic');
-      else if (step === 'camera')
-        speak('Camera access allows Watchora to describe scenes, read text, and detect nearby obstacles. Camera frames stay on your device unless you request AI analysis.', 6, 'onboarding-camera');
-      else if (step === 'location')
-        speak('Location access is needed for saved places, outdoor navigation, Safe Journey, and emergency location sharing.', 6, 'onboarding-location');
-      else if (step === 'notifications')
-        speak('Notifications allow Watchora to provide journey reminders and emergency updates when the application is not visible.', 6, 'onboarding-notif');
-      else if (step === 'motion')
-        speak('Motion access can help detect unusual phone movement and improve journey awareness. It does not prove that a theft or emergency occurred.', 6, 'onboarding-motion');
-      else if (step === 'battery')
-        speak('Battery level helps Watchora estimate remaining power during journeys and emergencies. It is shared only with trusted contacts while a journey or emergency is active.', 6, 'onboarding-battery');
-      else if (step === 'summary') {
-        const mic = service.get('microphone').state;
-        const cam = service.get('camera').state;
-        const loc = service.get('location').state;
-        const notif = service.get('notifications').state;
-        const bat = service.get('battery').state;
-        speak(
-          `Watchora is ready. Camera is ${describePermissionState(cam)}. Microphone is ${describePermissionState(mic)}. Location is ${describePermissionState(loc)}. Notifications are ${describePermissionState(notif)}. Battery is ${describePermissionState(bat)}. You can enable them later from Permission Centre.`,
-          6,
-          'onboarding-summary',
-        );
+      const speech = getStepSpeech(step, currentVoice);
+      if (speech) {
+        speak(speech, 6, `onboarding-${step}`);
       }
     }, 350);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step]);
+  }, [step, currentVoice]);
 
   async function requestAndAdvance(key: PermissionKey, next: Step) {
     setRequesting(key);
@@ -132,7 +110,7 @@ export function PermissionOnboarding({
         {step === 'welcome' && (
           <div className="form-stack">
             <p className="tiny-print" role="status" aria-live="polite">
-              {WELCOME_SPEECH}
+              {getStepSpeech('welcome', currentVoice)}
             </p>
             <button className="primary-btn start-watchora-btn" style={{ minHeight: 56 }} onClick={() => setStep('audio')}>
               ▶ Start Watchora
@@ -156,6 +134,7 @@ export function PermissionOnboarding({
                   const newV = e.target.value;
                   setCurrentVoice(newV);
                   onVoiceChange?.(newV);
+                  speak(getVoiceTestPhrase(newV), 4, 'voice-change-test');
                 }}
                 aria-label="Select voice"
                 style={{
@@ -179,28 +158,28 @@ export function PermissionOnboarding({
                   <option value="en-AU-NatashaNeural">👩 English (Australia) — Natasha</option>
                 </optgroup>
                 <optgroup label="Indian Languages">
-                  <option value="hi-IN-SwaraNeural">👩 Hindi — Swara</option>
-                  <option value="hi-IN-MadhurNeural">👨 Hindi — Madhur</option>
-                  <option value="ta-IN-PallaviNeural">👩 Tamil — Pallavi</option>
-                  <option value="ta-IN-ValluvarNeural">👨 Tamil — Valluvar</option>
-                  <option value="te-IN-ShrutiNeural">👩 Telugu — Shruti</option>
-                  <option value="te-IN-MohanNeural">👨 Telugu — Mohan</option>
-                  <option value="kn-IN-SapnaNeural">👩 Kannada — Sapna</option>
-                  <option value="ml-IN-SobhanaNeural">👩 Malayalam — Sobhana</option>
-                  <option value="bn-IN-TanishaaNeural">👩 Bengali — Tanishaa</option>
-                  <option value="gu-IN-DhwaniNeural">👩 Gujarati — Dhwani</option>
-                  <option value="mr-IN-AarohiNeural">👩 Marathi — Aarohi</option>
-                  <option value="ur-IN-GulNeural">👩 Urdu — Gul</option>
+                  <option value="hi-IN-SwaraNeural">👩 Hindi — Swara (हिन्दी)</option>
+                  <option value="hi-IN-MadhurNeural">👨 Hindi — Madhur (हिन्दी)</option>
+                  <option value="ta-IN-PallaviNeural">👩 Tamil — Pallavi (தமிழ்)</option>
+                  <option value="ta-IN-ValluvarNeural">👨 Tamil — Valluvar (தமிழ்)</option>
+                  <option value="te-IN-ShrutiNeural">👩 Telugu — Shruti (తెలుగు)</option>
+                  <option value="te-IN-MohanNeural">👨 Telugu — Mohan (తెలుగు)</option>
+                  <option value="kn-IN-SapnaNeural">👩 Kannada — Sapna (ಕನ್ನಡ)</option>
+                  <option value="ml-IN-SobhanaNeural">👩 Malayalam — Sobhana (മലയാളം)</option>
+                  <option value="bn-IN-TanishaaNeural">👩 Bengali — Tanishaa (বাংলা)</option>
+                  <option value="gu-IN-DhwaniNeural">👩 Gujarati — Dhwani (ગુજરાતી)</option>
+                  <option value="mr-IN-AarohiNeural">👩 Marathi — Aarohi (मराठी)</option>
+                  <option value="ur-IN-GulNeural">👩 Urdu — Gul (اردو)</option>
                 </optgroup>
                 <optgroup label="Other Languages">
-                  <option value="es-ES-ElviraNeural">👩 Spanish — Elvira</option>
-                  <option value="fr-FR-DeniseNeural">👩 French — Denise</option>
-                  <option value="de-DE-KatjaNeural">👩 German — Katja</option>
+                  <option value="es-ES-ElviraNeural">👩 Spanish — Elvira (Español)</option>
+                  <option value="fr-FR-DeniseNeural">👩 French — Denise (Français)</option>
+                  <option value="de-DE-KatjaNeural">👩 German — Katja (Deutsch)</option>
                 </optgroup>
               </select>
             </div>
             <div className="control-inline">
-              <button className="secondary-btn" onClick={testVoice}>
+              <button className="secondary-btn" onClick={() => speak(getVoiceTestPhrase(currentVoice), 4, 'test-voice-btn')}>
                 <span aria-hidden="true">🔊</span> Test voice
               </button>
               <button className="ghost-btn" onClick={() => setSpeechRate((v) => Math.max(0.7, Number((v - 0.1).toFixed(2))))}>
