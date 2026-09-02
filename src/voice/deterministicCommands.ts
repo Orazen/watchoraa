@@ -24,6 +24,18 @@ function extractDestination(text: string): string {
   return dest.length > 0 && dest.length <= 60 ? dest : '';
 }
 
+/** Extracts the text after the first matching trigger phrase (for object names). */
+function extractAfter(text: string, phrases: string[]): string {
+  for (const phrase of phrases) {
+    const idx = text.indexOf(phrase);
+    if (idx >= 0) {
+      const rest = text.slice(idx + phrase.length).replace(/^(the|my|a)\s+/, '').replace(/[.!?]+$/, '').trim();
+      if (rest) return rest.slice(0, 60);
+    }
+  }
+  return '';
+}
+
 function intent(intent: VoiceIntent['intent'], parameters: VoiceIntent['parameters'] = {}, requiresConfirmation = false, confidence = 0.99): VoiceIntent {
   return { intent, parameters, confidence, requiresConfirmation, deterministic: true };
 }
@@ -115,6 +127,15 @@ export function matchDeterministicCommand(transcript: string): VoiceIntent | nul
   // right after any scene/reading response, without re-capturing intent.
   if (has(t, 'tell me more', 'what else', 'go deeper', 'more detail about the scene', 'anything else in the scene', 'what else do you see', 'describe more')) {
     return intent('follow_up', {}, false, 0.9);
+  }
+  // ── Find-my-things: teach personal objects, then locate them by voice ──
+  if (has(t, 'teach this', 'remember this', 'remember this object', 'save this object')) {
+    const name = extractAfter(t, ['teach this as', 'teach this', 'remember this as', 'remember this', 'save this object as', 'save this object']) || 'my thing';
+    return intent('teach_thing', { name }, false, 0.95);
+  }
+  if (has(t, 'find my', "where is my", "where did i put my", "have you seen my")) {
+    const name = extractAfter(t, ['find my', 'where is my', 'where did i put my', 'have you seen my']) || '';
+    return intent('find_thing', { name }, false, name ? 0.95 : 0.8);
   }
 
   // ── Assistance ──

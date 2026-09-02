@@ -719,6 +719,15 @@ export const api = {
     request<{ barcode: string; product: { found: boolean; name?: string; brand?: string; quantity?: string; ingredientsText?: string; nutriments?: Record<string, unknown>; allergens?: string[] }; cached: boolean }>(
       `/api/products/${encodeURIComponent(barcode)}`,
     ),
+  /** Find-my-things: user-taught personal objects. */
+  listThings: (q?: string) =>
+    request<{ things: Array<{ id: string; name: string; description: string }> }>(`/api/things${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+  createThing: (name: string, description: string) =>
+    request<{ thing: { id: string; name: string; description: string }; updated?: boolean }>('/api/things', {
+      method: 'POST',
+      body: JSON.stringify({ name, description }),
+    }),
+  deleteThing: (id: string) => request<void>(`/api/things/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   /** Synthesizes speech to a playable object URL (backend neural TTS). */
   ttsAudioUrl: async (text: string, voice: string, rate = 1): Promise<string> => {
     const token = getToken();
