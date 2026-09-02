@@ -714,6 +714,11 @@ export const api = {
     request<{ incident: IncidentReport }>(`/api/admin/incidents/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }),
 
   ttsVoices: () => request<{ voices: TtsVoice[]; count: number }>('/api/tts/voices'),
+  /** Barcode product lookup (OpenFoodFacts via server proxy). */
+  productLookup: (barcode: string) =>
+    request<{ barcode: string; product: { found: boolean; name?: string; brand?: string; quantity?: string; ingredientsText?: string; nutriments?: Record<string, unknown>; allergens?: string[] }; cached: boolean }>(
+      `/api/products/${encodeURIComponent(barcode)}`,
+    ),
   /** Synthesizes speech to a playable object URL (backend neural TTS). */
   ttsAudioUrl: async (text: string, voice: string, rate = 1): Promise<string> => {
     const token = getToken();

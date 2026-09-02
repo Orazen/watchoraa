@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError, getToken, getRefreshToken, setSession, clearSession, setToken, localeFromVoice, getCachedUser, setCachedUser } from './api';
+import { scanBarcode, cachedProduct, rememberProduct, formatProductSpeech, type ScanHandle } from './barcode/productScan';
 import type {
   AdminAssistanceRequest,
   AdminIncident,
@@ -456,6 +457,8 @@ function MainApp({
   const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
   const ttsUrlRef = useRef<string | null>(null);
   const speakSeqRef = useRef(0);
+  // Active barcode scan (so a new scan stops the previous loop).
+  const productScanRef = useRef<ScanHandle | null>(null);
   const speechManagerRef = useRef<SpeechPriorityManager | null>(null);
   const lastSpokenRef = useRef('');
   // Tracks how many utterances are currently playing so the voice provider
@@ -742,8 +745,52 @@ function MainApp({
         setAnalysisMode('assistant');
         void voiceCaptureAndAnalyze('assistant', 'Find and read any expiry date, best-before date, or use-by date in this image. Read the date exactly as written. If no date is visible, say so plainly.');
         break;
-      case 'follow_up': {
+      case 'scan_product': {
         tab('tracking');
+        const runScan = async () => {
+          if (!('geolocation' in navigator)) return; // unreachable guard; camera check below matters
+          if (!videoRef.current) {
+            speak('Turn on the camera first, then say scan the barcode again.', 5, 'scan-no-camera');
+            return;
+          }
+          speak('Hold the camera steady over the barcode.', 5, 'scan-start');
+          try {
+            const handle = await scanBarcode(
+              videoRef.current,
+              (code) => {
+                void navigator.vibrate?.(80);
+                speak('Scanned. Looking up the product.', 5, 'scan-found');
+                const cached = cachedProduct(code);
+                const lookup = cached
+                  ? Promise.resolve({ product: cached, cached: true })
+                  : api
+                      .productLookup(code)
+                      .then((r) => {
+                        if (r.product.found) rememberProduct(code, r.product);
+                        return r;
+                      });
+                lookup
+                  .then((r) => speak(formatProductSpeech(r.product), 5, `scan-${code}`))
+                  .catch(() => speak('The product database is not reachable right now. You can say read this to have the label read aloud instead.', 5, 'scan-error'));
+              },
+              25_000,
+            );
+            productScanRef.current = handle;
+          } catch {
+            speak('Barcode scanning is not supported on this browser. You can say read this to have the label read aloud instead.', 5, 'scan-unsupported');
+          }
+        };
+        if (cameraActive) {
+          void runScan();
+        } else {
+          void (async () => {
+            await startCamera();
+            await runScan();
+          })();
+        }
+        break;
+      }
+      case 'follow_up': {        tab('tracking');
         setAnalysisMode('assistant');
         const prior = aiResult;
         if (!prior) {

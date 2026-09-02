@@ -92,6 +92,10 @@ export function matchDeterministicCommand(transcript: string): VoiceIntent | nul
   if (has(t, 'read this label', 'read the label', 'read this product', 'read the product', 'what does this cost', 'what is the price', 'check this product', 'read the barcode')) {
     return intent('shopping', {}, false, 1);
   }
+  // ── Barcode scan (before generic "read this") ──
+  if (has(t, 'scan the barcode', 'scan barcode', 'scan this barcode', 'scan the product', 'scan product', 'read the barcode number', 'identify product by barcode', 'what is this product')) {
+    return intent('scan_product', {}, false, 1);
+  }
 
   // ── Daily-living identification (copied from Seeing AI's most-used channels:
   // Color, Currency; plus expiry-date reading for food/medicine) ──
