@@ -534,6 +534,7 @@ function MainApp({
             });
         },
         stop: () => stopSpeaking(),
+        verbosity: voiceAssistant.settings.verbosity,
       });
     }
     speechManagerRef.current.speak({ text, priority, dedupeKey, rate: rateOverride });
@@ -831,15 +832,39 @@ function MainApp({
           .catch(() => speak('I could not check your taught objects.', 5, 'find-error'));
         break;
       }
-      case 'follow_up': {        tab('tracking');
+      case 'reports_near': {
+        // Spoken spatial answer: distance + direction-agnostic summary + age.
+        // Always states age — stale reports must not sound current.
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            api
+              .incidentsNear(pos.coords.latitude, pos.coords.longitude, 500)
+              .then(({ reports }) => {
+                if (reports.length === 0) {
+                  speak('No community reports within 500 metres in the last 90 days.', 5, 'reports-none');
+                  return;
+                }
+                const parts = reports.map((r) => `${r.category}, ${r.distanceMeters} metres away, reported ${r.ageDays === 0 ? 'today' : `${r.ageDays} day${r.ageDays === 1 ? '' : 's'} ago`}`);
+                speak(`${reports.length} report${reports.length === 1 ? '' : 's'} nearby. ${parts.join('. ')}. Say report a hazard to add one.`, 5, 'reports-near');
+              })
+              .catch(() => speak('I could not check community reports right now.', 5, 'reports-error'));
+          },
+          () => speak('I need your location to check nearby reports.', 5, 'reports-noloc'),
+          { timeout: 8000, maximumAge: 30_000 },
+        );
+        break;
+      }
+      case 'follow_up': {
+        tab('tracking');
         setAnalysisMode('assistant');
-        const prior = aiResult;
-        if (!prior) {
-          speak('Nothing to add yet — point the camera and say describe what is ahead first.', 5, 'followup-empty');
-          break;
-        }
-        const context = `Earlier you described this scene as: "${prior.summary}". The user wants MORE detail about the same scene, not a repeat. Describe what you did NOT mention before: background objects, signage, people and their direction of movement, or anything relevant beyond the first answer. Keep it under three sentences.`;
-        void voiceCaptureAndAnalyze('assistant', context);
+        // Scene memory lives server-side (text summaries, 90s TTL — never
+        // frames). The server injects prior context + honesty rules and
+        // tells the user plainly when memory is empty.
+        void voiceCaptureAndAnalyze(
+          'assistant',
+          'Tell me MORE about this scene, not less: describe what you did not mention before — background objects, signage, people and their direction of movement. Keep it under three sentences.',
+          { followUp: true },
+        );
         break;
       }
       case 'start_safe_journey':
@@ -1128,7 +1153,7 @@ function MainApp({
     return compressImage(canvas);
   }
 
-  async function analyzeFrame(mode: AnalysisMode, nextPrompt: string) {
+  async function analyzeFrame(mode: AnalysisMode, nextPrompt: string, opts?: { followUp?: boolean }) {
     if (isAnalyzing) return;
 
     const imageDataUrl = captureFrame();
@@ -1189,6 +1214,7 @@ function MainApp({
           mode,
           prompt: nextPrompt.trim() || 'Analyze the current frame.',
           imageDataUrl,
+          followUp: opts?.followUp === true,
         }),
         signal: controller.signal,
       });
@@ -1266,7 +1292,7 @@ function MainApp({
   // starts the camera if needed (waiting for the video element to actually
   // have a frame ready, not just for getUserMedia to resolve) and then
   // triggers the same analysis a manual "Capture & analyze" tap would.
-  async function voiceCaptureAndAnalyze(mode: AnalysisMode, promptText: string) {
+  async function voiceCaptureAndAnalyze(mode: AnalysisMode, promptText: string, opts?: { followUp?: boolean }) {
     if (!cameraActive) {
       speak('Starting the camera.', 4, 'voice-camera-starting');
       await startCamera();
@@ -1292,7 +1318,7 @@ function MainApp({
         });
       }
     }
-    await analyzeFrame(mode, promptText);
+    await analyzeFrame(mode, promptText, opts);
   }
 
   function repeatInstruction() {
@@ -1845,6 +1871,11 @@ function MainApp({
                   voiceSettings={voiceAssistant.settings}
                   onVoiceSettingsChange={(patch) => {
                     voiceAssistant.setSettings(patch);
+                    if ('verbosity' in patch && patch.verbosity !== undefined) {
+                      speechManagerRef.current?.setVerbosity(patch.verbosity);
+                      const levelName = patch.verbosity === 0 ? 'Essential: only hazards and emergencies will speak.' : patch.verbosity === 2 ? 'Detailed: all narration enabled.' : 'Standard detail level.';
+                      speak(`Detail level ${levelName} Emergency warnings always speak.`, 5, 'settings-verbosity');
+                    }
                     if ('pushToTalk' in patch) {
                       if (patch.pushToTalk) {
                         speak('Hands-free voice control off. Press the talk button to use your voice.', 5, 'settings-handsfree');
@@ -2319,10 +2350,24 @@ function CommunityTab({
     }
     setSaving(true);
     try {
-      const { incident } = await api.createIncident({ category: category.trim() || 'General', description: description.trim(), severity });
+      // Auto-attach current position so blind reporters never type an address.
+      // Best-effort: the report is still submitted if GPS fails (it just won't
+      // appear in near-me queries).
+      let lat: number | undefined;
+      let lng: number | undefined;
+      try {
+        const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 6000, maximumAge: 30_000 });
+        });
+        lat = pos.coords.latitude;
+        lng = pos.coords.longitude;
+      } catch {
+        // No location: submit without coordinates.
+      }
+      const { incident } = await api.createIncident({ category: category.trim() || 'General', description: description.trim(), severity, lat, lng });
       onCreated(incident);
       setDescription('');
-      announce('Report submitted.', 'online');
+      announce(lat != null ? 'Report submitted and pinned to your current location.' : 'Report submitted.', 'online');
     } catch (error) {
       announce(error instanceof ApiError ? error.message : 'Could not submit this report.', 'error');
     } finally {
@@ -2918,6 +2963,25 @@ function SettingsTab({
               </button>
             </div>
           </div>
+          <div className="settings-row">
+            <span>Detail level</span>
+            <div className="control-inline" role="radiogroup" aria-label="Speech detail level">
+              {([0, 1, 2] as const).map((level) => (
+                <button
+                  key={level}
+                  role="radio"
+                  aria-checked={voiceSettings.verbosity === level}
+                  className={`ghost-btn ${voiceSettings.verbosity === level ? 'active' : ''}`}
+                  onClick={() => onVoiceSettingsChange({ verbosity: level })}
+                >
+                  {level === 0 ? 'Essential' : level === 1 ? 'Standard' : 'Detailed'}
+                </button>
+              ))}
+            </div>
+          </div>
+          <p className="settings-hint">
+            Essential speaks only hazards, deviations and emergencies. Standard adds navigation and answers. Detailed adds background narration. Emergency warnings always speak, at every level.
+          </p>
           <button
             type="button"
             role="switch"

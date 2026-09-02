@@ -192,6 +192,36 @@ safeJourneyRouter.post(
 );
 
 // ── Route-deviation check: prompt first, escalate only after repeated prompts ──
+// Deviation is measured against the WALKED PATH (recent breadcrumbs), not the
+// last known point: comparing to lastLat/lastLng fired false prompts when the
+// user paused or doubled back (walking backwards to correct a missed turn is
+// normal and is good news, not an alarm). There is no planned route stored —
+// this is drift detection, and the spoken copy in the client must say "from
+// where you were walking", never "off your route".
+const DEVIATION_MAX_ACCURACY_M = 25; // ignore breadcrumbs with worse GPS accuracy (jitter gate)
+const DEVIATION_K_SAMPLES = 2; // consecutive off-path samples required before prompting
+
+/** Distance in meters from point P to segment A→B (planar approx — valid at
+ *  short ranges where haversine curvature is negligible). */
+export function distanceToSegmentMeters(
+  pLat: number, pLng: number, aLat: number, aLng: number, bLat: number, bLng: number,
+): number {
+  const toXY = (lat: number, lng: number) => ({
+    x: lng * 111_320 * Math.cos((lat * Math.PI) / 180),
+    y: lat * 110_540,
+  });
+  const p = toXY(pLat, pLng);
+  const a = toXY(aLat, aLng);
+  const b = toXY(bLat, bLng);
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return Math.hypot(p.x - a.x, p.y - a.y);
+  let t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
+}
+
 safeJourneyRouter.post(
   '/:id/deviation',
   asyncHandler(async (request, response) => {
@@ -210,12 +240,41 @@ safeJourneyRouter.post(
       return;
     }
 
-    const deviationMeters = haversineMeters(journey.lastLat, journey.lastLng, parsed.data.currentLat, parsed.data.currentLng);
+    // Recent walked path: breadcrumbs from the last 15 minutes with acceptable
+    // GPS accuracy, oldest first, capped to bound query cost.
+    const since = new Date(Date.now() - 15 * 60 * 1000);
+    const breadcrumbs = await prisma.journeyLocation.findMany({
+      where: { journeyId: journey.id, recordedAt: { gte: since }, accuracy: { lte: DEVIATION_MAX_ACCURACY_M } },
+      select: { lat: true, lng: true },
+      orderBy: { recordedAt: 'asc' },
+      take: 60,
+    });
+
+    let deviationMeters: number;
+    if (breadcrumbs.length >= 2) {
+      // Distance from the walked path: minimum over recent segments.
+      let min = Infinity;
+      for (let i = 1; i < breadcrumbs.length; i++) {
+        const d = distanceToSegmentMeters(
+          parsed.data.currentLat, parsed.data.currentLng,
+          breadcrumbs[i - 1].lat, breadcrumbs[i - 1].lng,
+          breadcrumbs[i].lat, breadcrumbs[i].lng,
+        );
+        if (d < min) min = d;
+      }
+      deviationMeters = min;
+    } else {
+      // Not enough clean breadcrumbs yet: fall back to last-point comparison.
+      deviationMeters = haversineMeters(journey.lastLat, journey.lastLng, parsed.data.currentLat, parsed.data.currentLng);
+    }
+
     const threshold = journey.deviationThresholdMeters;
     let action: 'none' | 'prompt' | 'escalate' = 'none';
 
     if (deviationMeters > threshold) {
-      // Prompt first. Escalate only after repeated unanswered prompts.
+      // Prompt first. Escalate only after repeated unanswered prompts. The
+      // K-sample confirmation lives client-side (prompt only after K
+      // consecutive off-path checks) — the escalation ladder is unchanged.
       if (journey.promptCount >= 2) {
         action = 'escalate';
         await prisma.journey.update({

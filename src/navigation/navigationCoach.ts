@@ -29,6 +29,10 @@ export interface TrackedHazard {
   isPerson: boolean;
   /** True when the box sits low enough in frame to be a ground-level trip risk. */
   isGroundLevel: boolean;
+  /** Box area at the last announcement — growth since then means CLOSING. */
+  lastAnnouncedArea: number;
+  /** Timestamp of the last announcement for this hazard. */
+  lastAnnouncedAt: number;
 }
 
 export interface CoachDetection {
@@ -208,6 +212,8 @@ export function coachStep(state: CoachState, input: CoachFrameInput, opts: Coach
         announced: false,
         isPerson: d.className === 'person',
         isGroundLevel: groundLevel,
+        lastAnnouncedArea: d.box.width * d.box.height,
+        lastAnnouncedAt: now,
       });
     }
   }
@@ -235,11 +241,42 @@ export function coachStep(state: CoachState, input: CoachFrameInput, opts: Coach
     if (h.phase === 'cleared') continue;
     const isNew = !h.announced;
     const isImmediate = h.tier === 'immediate' && h.phase !== 'spotted';
-    if (isNew || isImmediate) {
+    // Closing re-assert: the hazard has been announced before, the user is
+    // still walking, the box area GREW meaningfully since the last announce
+    // (approaching), and the re-assert cooldown has passed. Compressed
+    // wording — the full sentence was already spoken; this is a reminder.
+    const area = input.detections.find((d) => hazardId(d.className, zoneOf(d.box)) === h.id
+      && d.confidence >= MIN_ACT_CONFIDENCE
+      && zoneOf(d.box) === h.zone)?.box;
+    const areaNow = area ? area.width * area.height : h.lastAnnouncedArea;
+    const closing =
+      h.announced &&
+      now - h.lastAnnouncedAt >= o.reannounceCooldownMs &&
+      areaNow > h.lastAnnouncedArea * 1.25;
+    if (isNew || isImmediate || closing) {
       if (isNew) h.announced = true;
       const dir = directionPhrase(h.zone, h.tier);
       const clock = clockPosition(h.zone, h.tier);
       let text: string;
+      let dedupeKey: string;
+      if (closing) {
+        // Compressed re-assert: short, urgent, keyed per re-assert so the
+        // deduper does not swallow consecutive closings.
+        text = `Still there. ${cap(h.className)} ${h.zone === 'center' ? 'ahead' : h.zone === 'left' ? 'on your left' : 'on your right'}, getting closer.`;
+        dedupeKey = `hazard:${h.id}:closing:${now}`;
+        h.lastAnnouncedArea = areaNow;
+        h.lastAnnouncedAt = now;
+        announcements.push({
+          text,
+          priority: h.tier === 'immediate' ? 3 : 4,
+          pan: panFromZone(h.zone),
+          dedupeKey,
+          haptic: h.tier === 'immediate' ? 'hazard-immediate' : 'hazard-nearby',
+          kind: 'hazard',
+        });
+        state.lastAnnouncementAt = now;
+        continue;
+      }
       if (h.isPerson) {
         // People-awareness: distinct phrasing from object hazards — describes
         // presence and movement direction, never identifies or judges intent.
@@ -269,6 +306,12 @@ export function coachStep(state: CoachState, input: CoachFrameInput, opts: Coach
         haptic: h.tier === 'immediate' ? 'hazard-immediate' : 'hazard-nearby',
         kind: 'hazard',
       });
+      // Bookkeeping for closing-distance re-asserts.
+      const announcedBox = input.detections.find((d) => hazardId(d.className, zoneOf(d.box)) === h.id
+        && d.confidence >= MIN_ACT_CONFIDENCE
+        && zoneOf(d.box) === h.zone)?.box;
+      h.lastAnnouncedArea = announcedBox ? announcedBox.width * announcedBox.height : h.lastAnnouncedArea;
+      h.lastAnnouncedAt = now;
       state.lastAnnouncementAt = now;
     }
   }

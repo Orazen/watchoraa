@@ -38,6 +38,7 @@ export type VoiceIntentName =
   | 'scan_product'
   | 'teach_thing'
   | 'find_thing'
+  | 'reports_near'
   | 'follow_up'
   | 'unknown';
 

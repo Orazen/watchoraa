@@ -8,6 +8,7 @@ import { requireAuth } from '../lib/auth.js';
 import { prisma } from '../lib/prisma.js';
 import { getAiProvider, AiProviderError, type AiMode } from '../services/ai/ai-provider.js';
 import { buildPrompt, buildPromptWithOverride } from '../services/ai/prompt-builder.js';
+import { rememberSummary, recentSummaries, newestSummaryAgeSeconds } from '../lib/scene-memory.js';
 
 export const aiRouter = Router();
 
@@ -20,6 +21,8 @@ const generateSchema = z.object({
   prompt: z.string().min(1).max(2000),
   imageDataUrl: z.string().max(9_000_000).optional(),
   demo: z.boolean().optional(),
+  // Follow-up requests consume the short-lived scene-summary memory.
+  followUp: z.boolean().optional(),
 });
 
 const aiRateLimiter = rateLimit({
@@ -199,7 +202,7 @@ aiRouter.post(
       return;
     }
 
-    const { mode, prompt, imageDataUrl, demo } = parsed.data;
+    const { mode, prompt, imageDataUrl, demo, followUp } = parsed.data;
 
     if (mode === 'emergency') {
       response.status(400).json({
@@ -212,7 +215,26 @@ aiRouter.post(
     // use it as the instruction block — but ALWAYS composed with the safety
     // contract and response shape (buildPromptWithOverride appends them after
     // the override, so an admin prompt can never remove the guardrails).
-    let resolvedPrompt = buildPrompt(mode, prompt);
+    // Follow-up requests get scene-memory context: previous summaries with an
+    // explicit age stamp and hard instructions against motion/safety guesses.
+    // The memory holds TEXT summaries only — frames are never retained.
+    let userPrompt = prompt;
+    if (followUp) {
+      const memory = recentSummaries(request.userId!);
+      const age = newestSummaryAgeSeconds(request.userId!);
+      if (memory.length === 0) {
+        userPrompt = `${prompt}\n\n(Scene memory: empty — say plainly that nothing has been analyzed in the last 90 seconds and ask the user to capture a fresh view.)`;
+      } else {
+        userPrompt = [
+          prompt,
+          `Scene memory (previous summaries from the last 90 seconds, oldest first; newest is about ${age ?? 0} seconds old):`,
+          ...memory.map((m, i) => `${i + 1}. ${m}`),
+          'Rules for this follow-up: describe what the CURRENT frame adds beyond those summaries. When an object from memory is gone, say so plainly and mention where it was, with the age stamp ("a few seconds ago"). NEVER answer motion questions ("did it move?", "is it still there?") from memory — if the object is not clearly visible in the CURRENT frame, say you cannot tell from now and recommend a fresh capture.',
+        ].join('\n');
+      }
+    }
+
+    let resolvedPrompt = buildPrompt(mode, userPrompt);
     let promptVersion: number | null = null;
     try {
       const active = await prisma.promptVersion.findFirst({
@@ -220,7 +242,7 @@ aiRouter.post(
         orderBy: { version: 'desc' },
       });
       if (active) {
-        resolvedPrompt = buildPromptWithOverride(mode, prompt, active.prompt);
+        resolvedPrompt = buildPromptWithOverride(mode, userPrompt, active.prompt);
         promptVersion = active.version;
       }
     } catch {
@@ -273,6 +295,10 @@ aiRouter.post(
         redactedOutput: result.summary.slice(0, 500),
         promptVersion: promptVersion ?? undefined,
       });
+
+      // Scene memory for follow-ups: text summaries only (never frames),
+      // 90s TTL. Follow-up requests consume these as context.
+      rememberSummary(request.userId!, result.summary);
 
       response.json({ ...result, demo: forceDemo });
     } catch (error) {

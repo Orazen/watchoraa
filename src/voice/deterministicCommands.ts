@@ -137,6 +137,10 @@ export function matchDeterministicCommand(transcript: string): VoiceIntent | nul
     const name = extractAfter(t, ['find my', 'where is my', 'where did i put my', 'have you seen my']) || '';
     return intent('find_thing', { name }, false, name ? 0.95 : 0.8);
   }
+  // ── Community hazards near the user (spatial, spoken) ──
+  if (has(t, "what's reported near me", 'whats reported near me', 'what is reported near me', 'hazards near me', 'reports near me', 'any hazards nearby', 'what has been reported near me')) {
+    return intent('reports_near', {}, false, 1);
+  }
 
   // ── Assistance ──
   if (has(t, 'describe what is ahead', 'what is ahead', 'what is in front', 'describe the scene', 'describe my surroundings', 'what is around me', 'what objects are near')) {

@@ -665,8 +665,13 @@ export const api = {
   deletePlace: (id: string) => request<void>(`/api/places/${id}`, { method: 'DELETE' }),
 
   listIncidents: () => request<{ incidents: IncidentReport[] }>('/api/incidents'),
-  createIncident: (input: { category: string; description: string; severity: IncidentReport['severity'] }) =>
+  createIncident: (input: { category: string; description: string; severity: IncidentReport['severity']; lat?: number; lng?: number }) =>
     request<{ incident: IncidentReport }>('/api/incidents', { method: 'POST', body: JSON.stringify(input) }),
+  /** Spoken "what's reported near me?": server-computed distance + age, capped results. */
+  incidentsNear: (lat: number, lng: number, radiusMeters = 500) =>
+    request<{ reports: Array<{ id: string; category: string; description: string; severity: string; distanceMeters: number; ageDays: number }>; radiusMeters: number }>(
+      `/api/incidents/near?lat=${lat}&lng=${lng}&radius=${radiusMeters}`,
+    ),
   deleteIncident: (id: string) => request<void>(`/api/incidents/${id}`, { method: 'DELETE' }),
 
   listAssistanceRequests: () => request<{ requests: AssistanceRequest[] }>('/api/assistance'),
