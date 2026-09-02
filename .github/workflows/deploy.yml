@@ -32,11 +32,11 @@ jobs:
 
       - name: Build image on VPS
         run: |
-          ssh deploy-vps 'cd ~/watchora-build && nohup docker build -t orazen-watchora-c1gnyj:latest . > /tmp/watchora-build.log 2>&1 & echo BUILD_STARTED'
+          ssh deploy-vps 'cd ~/watchora-build && rm -f /tmp/watchora-build.log && nohup sh -c "docker build -t orazen-watchora-c1gnyj:latest . && echo __BUILD_OK__ >> /tmp/watchora-build.log || echo __BUILD_FAIL__ >> /tmp/watchora-build.log" > /dev/null 2>&1 & echo BUILD_STARTED'
 
       - name: Wait for build to finish
         run: |
-          ssh deploy-vps 'while pgrep -f "[d]ocker build -t orazen-watchora-c1gnyj" > /dev/null; do sleep 10; done; tail -3 /tmp/watchora-build.log; grep -q "DONE" /tmp/watchora-build.log || (echo BUILD_FAILED; exit 1)'
+          ssh deploy-vps 'for i in $(seq 1 90); do grep -q "__BUILD_OK__" /tmp/watchora-build.log 2>/dev/null && echo BUILD_OK && exit 0; grep -q "__BUILD_FAIL__" /tmp/watchora-build.log 2>/dev/null && (echo BUILD_FAILED; tail -20 /tmp/watchora-build.log; exit 1); sleep 10; done; echo BUILD_TIMEOUT; exit 1'
 
       - name: Roll swarm service
         run: |
