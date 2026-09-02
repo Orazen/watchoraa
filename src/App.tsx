@@ -742,6 +742,18 @@ function MainApp({
         setAnalysisMode('assistant');
         void voiceCaptureAndAnalyze('assistant', 'Find and read any expiry date, best-before date, or use-by date in this image. Read the date exactly as written. If no date is visible, say so plainly.');
         break;
+      case 'follow_up': {
+        tab('tracking');
+        setAnalysisMode('assistant');
+        const prior = aiResult;
+        if (!prior) {
+          speak('Nothing to add yet — point the camera and say describe what is ahead first.', 5, 'followup-empty');
+          break;
+        }
+        const context = `Earlier you described this scene as: "${prior.summary}". The user wants MORE detail about the same scene, not a repeat. Describe what you did NOT mention before: background objects, signage, people and their direction of movement, or anything relevant beyond the first answer. Keep it under three sentences.`;
+        void voiceCaptureAndAnalyze('assistant', context);
+        break;
+      }
       case 'start_safe_journey':
         tab('journey');
         if (params.destination) {

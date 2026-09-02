@@ -107,6 +107,11 @@ export function matchDeterministicCommand(transcript: string): VoiceIntent | nul
   if (has(t, 'is there enough light', 'how is the lighting', 'is it dark in here')) {
     return intent('describe_scene', { focus: 'lighting' }, false, 0.9);
   }
+  // Follow-up on the last analysis (Seeing AI "More info" pattern): works
+  // right after any scene/reading response, without re-capturing intent.
+  if (has(t, 'tell me more', 'what else', 'go deeper', 'more detail about the scene', 'anything else in the scene', 'what else do you see', 'describe more')) {
+    return intent('follow_up', {}, false, 0.9);
+  }
 
   // ── Assistance ──
   if (has(t, 'describe what is ahead', 'what is ahead', 'what is in front', 'describe the scene', 'describe my surroundings', 'what is around me', 'what objects are near')) {
