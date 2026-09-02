@@ -32,6 +32,9 @@ export type VoiceIntentName =
   | 'save_place'
   | 'set_coach_mode'
   | 'shopping'
+  | 'identify_color'
+  | 'identify_currency'
+  | 'read_expiry'
   | 'unknown';
 
 export interface VoiceIntent {

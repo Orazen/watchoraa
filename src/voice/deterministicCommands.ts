@@ -93,6 +93,21 @@ export function matchDeterministicCommand(transcript: string): VoiceIntent | nul
     return intent('shopping', {}, false, 1);
   }
 
+  // ── Daily-living identification (copied from Seeing AI's most-used channels:
+  // Color, Currency; plus expiry-date reading for food/medicine) ──
+  if (has(t, 'what color is this', 'what colour is this', 'what color', 'what colour', 'tell me the color', 'tell me the colour', 'identify the color', 'identify the colour')) {
+    return intent('identify_color', {}, false, 1);
+  }
+  if (has(t, 'what money is this', 'which note is this', 'which bill is this', 'identify the money', 'identify this banknote', 'how much money is this', 'what note am i holding', 'what currency')) {
+    return intent('identify_currency', {}, false, 1);
+  }
+  if (has(t, 'read the expiry', 'read the expiration', 'what is the expiry', 'when does this expire', 'best before', 'use by date', 'read the date on this')) {
+    return intent('read_expiry', {}, false, 1);
+  }
+  if (has(t, 'is there enough light', 'how is the lighting', 'is it dark in here')) {
+    return intent('describe_scene', { focus: 'lighting' }, false, 0.9);
+  }
+
   // ── Assistance ──
   if (has(t, 'describe what is ahead', 'what is ahead', 'what is in front', 'describe the scene', 'describe my surroundings', 'what is around me', 'what objects are near')) {
     return intent('describe_scene', {}, false, 1);

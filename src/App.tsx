@@ -727,6 +727,21 @@ function MainApp({
         setAnalysisMode('reading');
         void voiceCaptureAndAnalyze('reading', 'Read the text visible in this image aloud, word for word.');
         break;
+      case 'identify_color':
+        tab('tracking');
+        setAnalysisMode('assistant');
+        void voiceCaptureAndAnalyze('assistant', 'Identify the main color of the object in the center of this image. If the lighting makes it uncertain, say which colors it could be. One short sentence.');
+        break;
+      case 'identify_currency':
+        tab('tracking');
+        setAnalysisMode('assistant');
+        void voiceCaptureAndAnalyze('assistant', 'This image shows money (a banknote or coin). Identify its denomination and currency. Note that lighting can mislead: tell me the visual marks you based this on. Never guess between two similar denominations.');
+        break;
+      case 'read_expiry':
+        tab('tracking');
+        setAnalysisMode('assistant');
+        void voiceCaptureAndAnalyze('assistant', 'Find and read any expiry date, best-before date, or use-by date in this image. Read the date exactly as written. If no date is visible, say so plainly.');
+        break;
       case 'start_safe_journey':
         tab('journey');
         if (params.destination) {

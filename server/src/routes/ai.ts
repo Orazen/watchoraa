@@ -3,6 +3,7 @@ import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { env } from '../env.js';
 import { asyncHandler } from '../lib/asyncHandler.js';
+import { safeFetch } from '../lib/safe-url.js';
 import { requireAuth } from '../lib/auth.js';
 import { prisma } from '../lib/prisma.js';
 import { getAiProvider, AiProviderError, type AiMode } from '../services/ai/ai-provider.js';
@@ -113,6 +114,9 @@ export const SAFE_AI_INTENTS = [
   'list_places',
   'save_place',
   'shopping',
+  'identify_color',
+  'identify_currency',
+  'read_expiry',
   'help',
 ];
 
@@ -141,7 +145,7 @@ aiRouter.post(
     try {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 8000);
-      const res = await fetch(
+      const res = await safeFetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${env.GEMINI_MODEL}:generateContent?key=${env.GEMINI_API_KEY}`,
         {
           method: 'POST',

@@ -392,6 +392,7 @@ export function LandingPage({ onSignIn, onSignUp }: LandingProps) {
             <nav className="wispr-footer-links" aria-label="Footer">
               <a href="#wispr-features">What it does</a>
               <a href="#wispr-safety">Safety</a>
+              <a href="/install-guide.html">Install guide</a>
               <a href="/commitment.html">Our commitment</a>
               <button onClick={onSignIn}>Sign in</button>
             </nav>
