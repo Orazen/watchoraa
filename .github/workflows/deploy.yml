@@ -20,22 +20,27 @@ jobs:
           echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts
+          # Keep the connection alive across the multi-minute docker build.
+          printf 'Host deploy-vps\n  HostName %s\n  User %s\n  IdentityFile ~/.ssh/deploy_key\n  ServerAliveInterval 30\n  ServerAliveCountMax 20\n' \
+            "${{ secrets.DEPLOY_HOST }}" "${{ secrets.DEPLOY_USER }}" > ~/.ssh/config
 
       - name: Rsync source to VPS
         run: |
           rsync -a --exclude node_modules --exclude .git --exclude dist \
             -e "ssh -i ~/.ssh/deploy_key" \
-            ./ ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:~/watchora-build/
+            ./ deploy-vps:~/watchora-build/
 
       - name: Build image on VPS
         run: |
-          ssh -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
-            'cd ~/watchora-build && docker build -t orazen-watchora-c1gnyj:latest . 2>&1 | tail -2'
+          ssh deploy-vps 'cd ~/watchora-build && nohup docker build -t orazen-watchora-c1gnyj:latest . > /tmp/watchora-build.log 2>&1 & echo BUILD_STARTED'
+
+      - name: Wait for build to finish
+        run: |
+          ssh deploy-vps 'while pgrep -f "docker build -t orazen-watchora-c1gnyj" > /dev/null; do sleep 10; done; tail -3 /tmp/watchora-build.log; grep -q "DONE" /tmp/watchora-build.log || (echo BUILD_FAILED; exit 1)'
 
       - name: Roll swarm service
         run: |
-          ssh -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
-            'docker service update --force --detach mjna70kuhhz7 && sleep 45 && docker ps --filter name=orazen-watchora --format "{{.Status}}" | head -1'
+          ssh deploy-vps 'docker service update --force --detach mjna70kuhhz7 && sleep 45 && docker ps --filter name=orazen-watchora --format "{{.Status}}" | head -1'
 
       - name: Verify health
         run: |
