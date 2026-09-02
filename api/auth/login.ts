@@ -33,12 +33,11 @@ export default async function handler(req: any, res: any) {
 
   const account = ACCOUNTS[email];
 
-  if (account) {
-    if (account.pass !== password) {
-      res.status(401).json({ error: 'Incorrect email or password' });
-      return;
-    }
-
+  // Demo deployment only: exactly three published demo accounts, no
+  // self-registration. Email-substring role inference was removed — it let
+  // ANY email containing "admin" mint an ADMIN session. The real backend
+  // (server/) is the only path to a production account.
+  if (account && account.pass === password) {
     const user = {
       id: `usr_${account.role.toLowerCase()}`,
       email,
@@ -55,29 +54,5 @@ export default async function handler(req: any, res: any) {
     return;
   }
 
-  // Generic fallback user login if non-standard demo email
-  if (email && password) {
-    const role: 'ADMIN' | 'BLIND_USER' | 'CAREGIVER' = email.includes('admin')
-      ? 'ADMIN'
-      : email.includes('care')
-      ? 'CAREGIVER'
-      : 'BLIND_USER';
-
-    const user = {
-      id: `usr_${Date.now()}`,
-      email,
-      fullName: email.split('@')[0] || 'Watchora User',
-      role,
-      preferredLanguage: 'en',
-    };
-
-    res.status(200).json({
-      token: `demo-token-${role.toLowerCase()}-${Date.now()}`,
-      refreshToken: `demo-refresh-${role.toLowerCase()}-${Date.now()}`,
-      user,
-    });
-    return;
-  }
-
-  res.status(400).json({ error: 'Please enter your email and password' });
+  res.status(401).json({ error: 'Invalid email or password' });
 }

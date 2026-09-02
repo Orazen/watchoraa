@@ -32,11 +32,14 @@ caregiverRouter.get(
     const limit = parsed.success ? parsed.data.limit : 20;
 
     // Blind users who listed this caregiver's email as a trusted contact.
+    // Case-insensitive match so 'Care@x.com' vs 'care@x.com' never breaks the link.
     const contacts = await prisma.trustedContact.findMany({
-      where: { email: me.email },
-      select: { userId: true, name: true, relationship: true, canReceiveAlerts: true, canSeeLocation: true },
+      where: { email: { equals: me.email, mode: 'insensitive' } },
+      select: { userId: true, name: true, relationship: true, canReceiveAlerts: true, canSeeLocation: true, shareExpiresAt: true },
     });
-    const blindUserIds = [...new Set(contacts.map((c) => c.userId))];
+    const now = Date.now();
+    const activeContacts = contacts.filter((c) => !c.shareExpiresAt || c.shareExpiresAt.getTime() > now);
+    const blindUserIds = [...new Set(activeContacts.map((c) => c.userId))];
 
     const blindUsers = blindUserIds.length
       ? await prisma.user.findMany({
@@ -110,11 +113,16 @@ caregiverRouter.get(
     const targetUserId = String(request.params.userId);
 
     const contact = await prisma.trustedContact.findFirst({
-      where: { userId: targetUserId, email: me.email, canSeeLocation: true },
+      where: { userId: targetUserId, email: { equals: me.email, mode: 'insensitive' }, canSeeLocation: true },
     });
     if (!contact) {
       // Not listed as a location-sharing contact for this user — say so
       // plainly rather than pretending there's simply no active journey.
+      response.json({ journey: null, consent: false });
+      return;
+    }
+    // A time-boxed sharing grant that has lapsed is treated as no consent.
+    if (contact.shareExpiresAt && contact.shareExpiresAt.getTime() <= Date.now()) {
       response.json({ journey: null, consent: false });
       return;
     }

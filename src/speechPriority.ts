@@ -119,6 +119,11 @@ export class SpeechPriorityManager {
 
   /** Call when the active utterance ends to play the next queued item. */
   onEnded(): void {
+    // The neural-audio path and the speechSynthesis fallback can BOTH fire an
+    // end event for the same logical utterance (fallback starts as the audio
+    // ends). Without this guard the second call advances the queue while the
+    // first queued item is still playing — overlapping, duplicated speech.
+    if (this.currentPriority == null) return;
     this.disarmWatchdog();
     this.currentPriority = null;
     const next = this.queue.shift();

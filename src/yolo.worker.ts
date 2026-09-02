@@ -184,8 +184,14 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
 
     if (message.type === 'detect') {
       const start = performance.now();
-      const detections = await runInference(message.bitmap);
-      message.bitmap.close();
+      let detections: Detection[];
+      try {
+        detections = await runInference(message.bitmap);
+      } finally {
+        // The bitmap holds a full camera frame of GPU/heap memory. Close it on
+        // every path — inference success OR failure — or each failed frame leaks.
+        message.bitmap.close();
+      }
       const inferenceMs = performance.now() - start;
       (self as unknown as { postMessage: (m: WorkerResponse) => void }).postMessage({
         type: 'detections',

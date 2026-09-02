@@ -5,6 +5,7 @@ import cors from 'cors';
 import express from 'express';
 import helmet from 'helmet';
 import pinoHttp from 'pino-http';
+import rateLimit from 'express-rate-limit';
 import { apiRouter } from './routes/index.js';
 import { corsOrigins } from './env.js';
 
@@ -70,6 +71,18 @@ export function createApp() {
   app.use(express.json({ limit: '10mb' }));
   app.use(pinoHttp());
 
+  // Global backstop rate limit. Router-specific limiters (auth, ai, tts) are
+  // tighter; this keeps SOS-spam, contact, incident and journey writes from
+  // being completely unthrottled.
+  const globalRateLimiter = rateLimit({
+    windowMs: 60_000,
+    max: 120,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many requests. Please wait a moment and try again.' },
+  });
+  app.use(globalRateLimiter);
+
   app.get('/healthz', (_request, response) => response.json({ ok: true }));
   app.get('/api/healthz', (_request, response) => response.json({ ok: true }));
   app.use('/api', apiRouter);
@@ -85,9 +98,17 @@ export function createApp() {
     });
   }
 
-  app.use((error: unknown, _request: express.Request, response: express.Response, _next: express.NextFunction) => {
-    const message = error instanceof Error ? error.message : 'Internal server error';
-    response.status(500).json({ error: message });
+  app.use((error: unknown, request: express.Request, response: express.Response, _next: express.NextFunction) => {
+    // Log full detail server-side; return a generic message so Prisma/DB
+    // internals (query shape, table names) never leak to clients. 4xx errors
+    // thrown by routes with their own status/message are preserved.
+    const status = (error as { status?: number; statusCode?: number } | null)?.status ?? (error as { statusCode?: number } | null)?.statusCode ?? 500;
+    if (status >= 500 || !(error instanceof Error)) {
+      request.log?.error?.({ err: error }, 'Unhandled request error');
+      response.status(500).json({ error: 'Internal server error' });
+      return;
+    }
+    response.status(status).json({ error: error.message });
   });
 
   return app;

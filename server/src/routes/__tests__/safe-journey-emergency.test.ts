@@ -27,6 +27,10 @@ beforeAll(async () => {
   caregiverId = cg.id;
   blindToken = signToken({ sub: blind.id, email: blind.email });
   caregiverToken = signToken({ sub: cg.id, email: cg.email });
+  // Acknowledge is now restricted to trusted contacts of the blind user.
+  await prisma.trustedContact.create({
+    data: { userId: blind.id, name: 'Safety CG', email: caregiverEmail, canReceiveAlerts: true },
+  });
 });
 
 afterAll(async () => {
@@ -134,7 +138,7 @@ describe('Emergency', () => {
     expect(trigger.status).toBe(201);
     expect(trigger.body.session.status).toBe('ACTIVE');
     expect(trigger.body.session.mapsUrl).toContain('maps.google.com');
-    expect(trigger.body.cancelWindowSeconds).toBe(5);
+    expect(trigger.body.cancelWindowSeconds).toBe(10);
     const sid = trigger.body.session.id;
 
     // Location update.

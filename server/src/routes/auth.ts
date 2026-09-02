@@ -58,23 +58,36 @@ authRouter.post(
 
     const passwordHash = await bcrypt.hash(password, 12);
     // Fresh-install bootstrap: the very first account becomes the workspace
-    // owner (admin). Safe because this only happens when the user table is empty.
-    const userCount = await prisma.user.count();
-    const user = await prisma.user.create({
-      data: { email, passwordHash, fullName, role: userCount === 0 ? 'ADMIN' : role },
+    // owner (admin). The advisory lock makes the count-then-create atomic, so
+    // two concurrent signups can never both win the empty-table race.
+    const user = await prisma.$transaction(async (tx) => {
+      // ::text cast — $queryRaw cannot deserialize the void result the lock
+      // function otherwise returns (fails with "Failed to deserialize column
+      // of type 'void'").
+      await tx.$queryRaw`SELECT pg_advisory_xact_lock(727100001)::text AS lock`;
+      const userCount = await tx.user.count();
+      const created = await tx.user.create({
+        data: {
+          email,
+          passwordHash,
+          fullName,
+          role: userCount === 0 ? 'ADMIN' : role,
+        },
+      });
+      return { created, isFirst: userCount === 0 };
     });
 
     await recordAudit({
-      actorId: user.id,
-      action: userCount === 0 ? 'auth.first_admin_signup' : 'auth.signup',
+      actorId: user.created.id,
+      action: user.isFirst ? 'auth.first_admin_signup' : 'auth.signup',
       entityType: 'User',
-      entityId: user.id,
-      metadata: { email: user.email, role: user.role },
+      entityId: user.created.id,
+      metadata: { email: user.created.email, role: user.created.role },
     });
 
-    const token = signToken({ sub: user.id, email: user.email });
-    const refresh = await issueRefreshToken(user.id, user.email);
-    response.status(201).json({ token, refreshToken: refresh.token, user: toPublicUser(user) });
+    const token = signToken({ sub: user.created.id, email: user.created.email });
+    const refresh = await issueRefreshToken(user.created.id, user.created.email);
+    response.status(201).json({ token, refreshToken: refresh.token, user: toPublicUser(user.created) });
   }),
 );
 
@@ -98,6 +111,10 @@ authRouter.post(
     const passwordMatches = await bcrypt.compare(password, user.passwordHash);
     if (!passwordMatches) {
       response.status(401).json({ error: 'Invalid email or password' });
+      return;
+    }
+    if (!user.isActive) {
+      response.status(403).json({ error: 'This account has been deactivated. Contact an administrator.' });
       return;
     }
 
@@ -183,10 +200,12 @@ authRouter.post(
   }),
 );
 
-// Forgot password: creates a one-hour reset token. Without an SMTP provider
-// configured, the token is returned in the response so a self-hosted operator
-// can complete the flow (clearly labeled). When an email service is added,
-// this becomes a delivery point.
+// Forgot password: creates a one-hour reset token. Email delivery requires an
+// SMTP provider (see lib/notify.ts). For local development ONLY, an operator
+// can set EXPOSE_DEV_RESET_TOKEN=true to have the raw token returned in the
+// response. This must never be enabled in production: anyone who knows a
+// user's email could otherwise take over the account. Read per-request so
+// tests can enable it without restarting the process.
 authRouter.post(
   '/forgot-password',
   authRateLimiter,
@@ -210,10 +229,15 @@ authRouter.post(
       entityType: 'User',
       entityId: user.id,
     });
+    // Best-effort email delivery; falls back to a server-side log when SMTP is
+    // not configured, so the operator can complete the flow from the logs.
+    const { sendPasswordResetEmail } = await import('../lib/notify.js');
+    const delivered = await sendPasswordResetEmail(user.email, reset.raw).catch(() => false);
     response.json({
       ok: true,
       note: 'If an account exists, a reset link has been issued.',
-      devToken: reset.raw, // self-hosted dev convenience; replace with email delivery in production
+      ...(process.env.EXPOSE_DEV_RESET_TOKEN === 'true' ? { devToken: reset.raw } : {}),
+      ...(delivered ? { delivery: 'email' } : {}),
     });
   }),
 );
