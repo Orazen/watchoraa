@@ -6,7 +6,7 @@ import { asyncHandler } from '../lib/asyncHandler.js';
 import { requireAuth } from '../lib/auth.js';
 import { prisma } from '../lib/prisma.js';
 import { getAiProvider, AiProviderError, type AiMode } from '../services/ai/ai-provider.js';
-import { buildPrompt } from '../services/ai/prompt-builder.js';
+import { buildPrompt, buildPromptWithOverride } from '../services/ai/prompt-builder.js';
 
 export const aiRouter = Router();
 
@@ -205,7 +205,9 @@ aiRouter.post(
     }
 
     // Prompt versioning: if an admin activated a custom prompt for this mode,
-    // prefer it over the built-in prompt (safety teams can tune per mode).
+    // use it as the instruction block — but ALWAYS composed with the safety
+    // contract and response shape (buildPromptWithOverride appends them after
+    // the override, so an admin prompt can never remove the guardrails).
     let resolvedPrompt = buildPrompt(mode, prompt);
     let promptVersion: number | null = null;
     try {
@@ -214,7 +216,7 @@ aiRouter.post(
         orderBy: { version: 'desc' },
       });
       if (active) {
-        resolvedPrompt = active.prompt;
+        resolvedPrompt = buildPromptWithOverride(mode, prompt, active.prompt);
         promptVersion = active.version;
       }
     } catch {
