@@ -60,7 +60,9 @@ export function MapView({
               source: 'trail',
               layout: { 'line-cap': 'round', 'line-join': 'round' },
               paint: {
-                'line-color': 'var(--accent-lavender)',
+                // MapLibre's style spec does not resolve CSS custom properties,
+                // so pass the token's literal value (matches --accent-lavender).
+                'line-color': '#f0d7ff',
                 'line-width': 3,
                 'line-opacity': 0.7,
               },

@@ -109,6 +109,13 @@ export function useHazardDetection(
 
       if (message.type === 'error') {
         pendingRef.current = false;
+        // Stop the frame pump: the worker's model/session is broken, so
+        // posting more frames would only pile up errors (and leaked bitmaps).
+        // Surface the failure; the user can reload to re-initialize.
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current);
+          intervalRef.current = null;
+        }
         setState((s) => ({ ...s, status: 'error', errorMessage: message.message }));
         return;
       }

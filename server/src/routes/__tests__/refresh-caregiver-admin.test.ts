@@ -78,9 +78,17 @@ describe('POST /api/auth/refresh (rotation)', () => {
 
 describe('password reset flow', () => {
   it('issues a dev token and consumes it to set a new password', async () => {
+    // The raw token is returned ONLY under the explicit dev flag — without it,
+    // the response must never contain the token (account-takeover guard).
+    process.env.EXPOSE_DEV_RESET_TOKEN = 'true';
     const forgot = await request(app).post('/api/auth/forgot-password').send({ email: blindEmail });
     expect(forgot.status).toBe(200);
     expect(forgot.body.devToken).toBeTypeOf('string');
+    delete process.env.EXPOSE_DEV_RESET_TOKEN;
+
+    const hidden = await request(app).post('/api/auth/forgot-password').send({ email: blindEmail });
+    expect(hidden.status).toBe(200);
+    expect(hidden.body.devToken).toBeUndefined();
 
     const bad = await request(app).post('/api/auth/reset-password').send({ token: 'wrong', password: 'newpassword123' });
     expect(bad.status).toBe(400);

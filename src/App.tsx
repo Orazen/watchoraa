@@ -419,6 +419,13 @@ function MainApp({
   const [voiceRate, setVoiceRate] = useState(1.05);
   const [language, setLanguage] = useState('English');
   const [voice, setVoice] = useState('en-US-JennyNeural');
+  // Mirrors for the speech manager: it is created once, so its play closure
+  // reads the ref instead of the render-scoped state (which would freeze at
+  // first-render values forever).
+  const voiceRateRef = useRef(voiceRate);
+  const voiceRef = useRef(voice);
+  voiceRateRef.current = voiceRate;
+  voiceRef.current = voice;
   const [voices, setVoices] = useState<TtsVoice[] | null>(null);
   const [themeMode, setThemeMode] = useState<'Light' | 'Dark'>('Light');
   const [hazardLayerEnabled, setHazardLayerEnabled] = useState(true);
@@ -462,14 +469,16 @@ function MainApp({
   }
 
   // Priority-aware speech: danger/emergency interrupts anything lower.
+  // voice/voiceRate live in refs so the once-created manager never speaks with
+  // stale settings — settings changes must apply to the very next utterance.
   function speakWithPriority(text: string, priority: SpeechPriority = 5, dedupeKey?: string, rateOverride?: number) {
     if (!speechManagerRef.current) {
       speechManagerRef.current = new SpeechPriorityManager({
         play: (t, p, customRate) => {
           stopSpeaking();
           const seq = ++speakSeqRef.current;
-          const locale = localeFromVoice(voice);
-          const effectiveRate = customRate ?? voiceRate;
+          const locale = localeFromVoice(voiceRef.current);
+          const effectiveRate = customRate ?? voiceRateRef.current;
           api
             .ttsAudioUrl(t, voice, effectiveRate)
             .then((url) => {
@@ -527,7 +536,10 @@ function MainApp({
     speechManagerRef.current.speak({ text, priority, dedupeKey, rate: rateOverride });
   }
 
-  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:4000';
+  // Same fallback contract as api.ts: same-origin when deployed, localhost
+  // only when actually running on a dev machine (never in a production build).
+  const isDevHost = typeof window !== 'undefined' && /^(localhost|127\.0\.0\.1)$/.test(window.location.hostname);
+  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? (isDevHost ? 'http://127.0.0.1:4000' : '');
 
   // Phase A: local, low-latency hazard detection (YOLOv8n via onnxruntime-web, in a
   // Web Worker). Runs continuously while the camera is on, independent of the
@@ -2456,7 +2468,13 @@ function SafeJourneyTab({
   const loadActive = useCallback(() => {
     api
       .activeJourney()
-      .then((res) => setJourney(res.journey))
+      .then((res) => {
+        setJourney(res.journey);
+        // This tab unmounts on tab switch, which clears the geolocation watch.
+        // If we come back to an in-flight journey, the watch MUST restart —
+        // otherwise monitoring silently stops while the UI implies otherwise.
+        if (res.journey && !locRef.current) beginLocation(res.journey.id);
+      })
       .catch(() => setJourney(null));
   }, []);
 
@@ -2495,8 +2513,9 @@ function SafeJourneyTab({
       speak(`Safe journey started to ${res.journey.destination}. I will monitor your progress.`, 5, 'journey-start');
       beginLocation(res.journey.id);
     } catch (e) {
-      setError(e instanceof ApiError ? e.message : 'Could not start journey.');
-      announce(error || 'Could not start journey.', 'error');
+      const message = e instanceof ApiError ? e.message : 'Could not start journey.';
+      setError(message);
+      announce(message, 'error');
     } finally {
       setStarting(false);
     }

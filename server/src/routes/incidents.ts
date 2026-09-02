@@ -18,11 +18,12 @@ incidentsRouter.get(
   '/',
   asyncHandler(async (_request, response) => {
     // Moderated feed: REMOVED reports are hidden from the public community list.
+    // Reporters are NOT identified: a blind user's name must not be attached
+    // to every location-ish hazard report visible to all signed-in users.
     const incidents = await prisma.incidentReport.findMany({
       where: { status: { not: 'REMOVED' } },
       orderBy: { createdAt: 'desc' },
       take: 50,
-      include: { reporter: { select: { fullName: true } } },
     });
     response.json({ incidents });
   }),

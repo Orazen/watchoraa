@@ -36,8 +36,11 @@ contactsRouter.post(
       return;
     }
 
+    // Emails are the join key for caregiver matching — store normalized so
+    // Care@x.com and care@x.com can never silently break alert delivery.
+    const data = { ...parsed.data, email: parsed.data.email?.trim().toLowerCase() };
     const contact = await prisma.trustedContact.create({
-      data: { ...parsed.data, userId: request.userId! },
+      data: { ...data, userId: request.userId! },
     });
     response.status(201).json({ contact });
   }),

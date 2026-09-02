@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { asyncHandler } from '../lib/asyncHandler.js';
 import { requireAuth } from '../lib/auth.js';
 import { recordAudit } from '../lib/audit.js';
+import { notifyTrustedContacts } from '../lib/alerts.js';
 import { prisma } from '../lib/prisma.js';
 
 export const emergencyRouter = Router();
@@ -37,6 +38,16 @@ const locationSchema = z.object({
 
 function mapsUrl(lat: number, lng: number): string {
   return `https://maps.google.com/?q=${lat.toFixed(6)},${lng.toFixed(6)}`;
+}
+
+const CANCEL_WINDOW_SECONDS = 10;
+
+/** Lazily expires sessions whose TTL has passed so /active and /inbox never surface stale emergencies. */
+async function expireStaleSessions(): Promise<void> {
+  await prisma.emergencySession.updateMany({
+    where: { status: 'ACTIVE', expiresAt: { lt: new Date() } },
+    data: { status: 'EXPIRED' },
+  });
 }
 
 function serialize(s: any) {
@@ -99,7 +110,11 @@ emergencyRouter.post(
       metadata: { emergencyType: emergencyType ?? null, hasLocation: lat != null, journeyId: journeyId ?? null },
     });
 
-    response.status(201).json({ session: serialize(session), cancelWindowSeconds: 5 });
+    // Fire-and-forget: alert trusted contacts over email. Never blocks the
+    // 201 response; delivery outcome is recorded in the audit log.
+    void notifyTrustedContacts(request.userId!, 'SOS', { journeyId, sessionId: session.id });
+
+    response.status(201).json({ session: serialize(session), cancelWindowSeconds: CANCEL_WINDOW_SECONDS });
   }),
 );
 
@@ -116,8 +131,8 @@ emergencyRouter.post(
       response.status(409).json({ error: 'Session is no longer active' });
       return;
     }
-    // Cancellation allowed within 10s of triggering.
-    if (Date.now() - session.triggeredAt.getTime() > 10_000) {
+    // Cancellation allowed within the advertised cancel window.
+    if (Date.now() - session.triggeredAt.getTime() > CANCEL_WINDOW_SECONDS * 1000) {
       response.status(409).json({ error: 'Cancellation window has closed' });
       return;
     }
@@ -166,6 +181,7 @@ emergencyRouter.post(
 emergencyRouter.get(
   '/active',
   asyncHandler(async (request, response) => {
+    await expireStaleSessions();
     const session = await prisma.emergencySession.findFirst({
       where: { userId: request.userId, status: 'ACTIVE' },
       include: { acknowledgements: true },
@@ -203,6 +219,24 @@ emergencyRouter.post(
       response.status(404).json({ error: 'Active emergency session not found' });
       return;
     }
+    // Only someone the user listed as a trusted contact (or an admin) may
+    // acknowledge — otherwise any authenticated user could forge the "someone
+    // saw your SOS" signal a blind user relies on.
+    const me = await prisma.user.findUnique({ where: { id: request.userId }, select: { email: true, role: true } });
+    if (!me) {
+      response.status(401).json({ error: 'Authentication required' });
+      return;
+    }
+    if (me.role !== 'ADMIN') {
+      const isTrusted = await prisma.trustedContact.findFirst({
+        where: { userId: session.userId, email: { equals: me.email, mode: 'insensitive' } },
+        select: { id: true },
+      });
+      if (!isTrusted) {
+        response.status(403).json({ error: 'Only a trusted contact of this person can acknowledge their alert' });
+        return;
+      }
+    }
     const ack = await prisma.emergencyAcknowledgement.create({
       data: { sessionId: session.id, contactUserId: request.userId },
     });
@@ -225,8 +259,9 @@ emergencyRouter.get(
       response.status(403).json({ error: 'Caregiver access required' });
       return;
     }
-    const contacts = await prisma.trustedContact.findMany({ where: { email: me.email }, select: { userId: true } });
+    const contacts = await prisma.trustedContact.findMany({ where: { email: { equals: me.email, mode: 'insensitive' } }, select: { userId: true } });
     const userIds = [...new Set(contacts.map((c) => c.userId))];
+    await expireStaleSessions();
     const sessions = userIds.length
       ? await prisma.emergencySession.findMany({
           where: { userId: { in: userIds }, status: 'ACTIVE' },

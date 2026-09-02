@@ -122,6 +122,9 @@ model TrustedContact {
   updatedAt        DateTime @updatedAt
   user             User     @relation("UserTrustedContacts", fields: [userId], references: [id], onDelete: Cascade)
   monitoredJourneys Journey[] @relation("JourneyTrustedContact")
+
+  @@index([userId])
+  @@index([email])
 }
 
 model ConsentGrant {
@@ -132,6 +135,8 @@ model ConsentGrant {
   revokedAt   DateTime?
   metadata    Json?
   user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model SavedPlace {
@@ -145,6 +150,8 @@ model SavedPlace {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model Journey {
@@ -175,6 +182,8 @@ model Journey {
   escalatedAt     DateTime?
   locations       JourneyLocation[]
   trustedContact  TrustedContact? @relation("JourneyTrustedContact", fields: [trustedContactId], references: [id], onDelete: SetNull)
+
+  @@index([userId, status])
 }
 
 model JourneyLocation {
@@ -221,6 +230,8 @@ model EmergencyAcknowledgement {
   acknowledgedAt DateTime @default(now())
   note        String?
   session     EmergencySession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
 }
 
 model ReadingEntry {
@@ -231,6 +242,8 @@ model ReadingEntry {
   language      String?
   createdAt     DateTime @default(now())
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model AssistanceRequest {
@@ -244,6 +257,8 @@ model AssistanceRequest {
   sentAt          DateTime?
   resolvedAt      DateTime?
   user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
 }
 
 model IncidentReport {
@@ -257,6 +272,9 @@ model IncidentReport {
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
   reporter        User              @relation("IncidentReporter", fields: [reporterId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@index([reporterId])
 }
 
 model PromptVersion {
@@ -266,6 +284,8 @@ model PromptVersion {
   prompt      String
   isActive    Boolean  @default(false)
   createdAt   DateTime @default(now())
+
+  @@unique([mode, version])
 }
 
 model AIRequestLog {

@@ -15,7 +15,13 @@ export default async function handler(req: any, res: any) {
 
   const email = (body.email || '').trim().toLowerCase();
   const fullName = body.fullName || (email ? email.split('@')[0] : 'Watchora User');
-  const role = body.role || (email.includes('admin') ? 'ADMIN' : email.includes('care') ? 'CAREGIVER' : 'BLIND_USER');
+  // Demo signup always yields a plain demo user — role was previously inferred
+  // from the email substring, which let anyone self-register as ADMIN/CAREGIVER.
+  const role = 'BLIND_USER';
+  if (!email) {
+    res.status(400).json({ error: 'A valid email is required' });
+    return;
+  }
 
   const user = {
     id: `usr_${Date.now()}`,

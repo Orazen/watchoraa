@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { asyncHandler } from '../lib/asyncHandler.js';
 import { requireAuth } from '../lib/auth.js';
 import { recordAudit } from '../lib/audit.js';
+import { notifyTrustedContacts } from '../lib/alerts.js';
 import { prisma } from '../lib/prisma.js';
 
 export const safeJourneyRouter = Router();
@@ -278,7 +279,11 @@ safeJourneyRouter.post(
       entityType: 'Journey',
       entityId: journey.id,
     });
-    response.json({ ok: true, message: 'Help requested. Your trusted contact has been notified.' });
+    // Real notification path: email the trusted contacts. Delivery outcomes
+    // are audited inside notifyTrustedContacts; the response no longer
+    // promises "notified" unconditionally.
+    void notifyTrustedContacts(request.userId!, 'LOST', { journeyId: journey.id });
+    response.json({ ok: true, message: 'Help requested. We are notifying your trusted contacts now.' });
   }),
 );
 

@@ -3,6 +3,7 @@ import type { NextFunction, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { env } from '../env.js';
 import { prisma } from './prisma.js';
+import { recordAudit } from './audit.js';
 
 export interface AuthTokenPayload {
   sub: string;
@@ -19,7 +20,10 @@ declare global {
   }
 }
 
-const ACCESS_TTL = '30d';
+// Short-lived access tokens: a stolen token stops working within the hour even
+// if refresh tokens are never revoked. The SPA refreshes on 401, so a short TTL
+// is transparent to users.
+const ACCESS_TTL = '1h';
 export const REFRESH_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
 
 function hashToken(token: string): string {
@@ -68,10 +72,29 @@ export async function rotateRefreshToken(rawToken: string): Promise<{ token: str
   const user = await prisma.user.findUnique({ where: { id: stored.userId } });
   if (!user || !user.isActive) return null;
 
+  // Revoke first via a conditional update so only ONE concurrent request with
+  // this token can win; both requests passing a read-check would otherwise each
+  // mint a fresh session. count === 0 means the token was already consumed —
+  // the classic replay signature — so kill every session for this user.
+  const revoked = await prisma.refreshToken.updateMany({
+    where: { id: stored.id, revokedAt: null },
+    data: { revokedAt: new Date() },
+  });
+  if (revoked.count === 0) {
+    await revokeAllRefreshTokens(user.id);
+    await recordAudit({
+      actorId: user.id,
+      action: 'auth.refresh_reuse_detected',
+      entityType: 'User',
+      entityId: user.id,
+    }).catch(() => undefined);
+    return null;
+  }
+
   const next = await issueRefreshToken(user.id, user.email);
   await prisma.refreshToken.update({
     where: { id: stored.id },
-    data: { revokedAt: new Date(), replacedByTokenId: next.id },
+    data: { replacedByTokenId: next.id },
   });
   return { ...next, userId: user.id };
 }
