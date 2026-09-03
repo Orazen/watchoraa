@@ -9,6 +9,8 @@ export interface MapViewProps {
   height?: string;
   showCompass?: boolean;
   showScale?: boolean;
+  /** GPS accuracy radius in meters — renders a translucent ring around the user. */
+  accuracyMeters?: number | null;
 }
 
 export function MapView({
@@ -20,6 +22,7 @@ export function MapView({
   height = '300px',
   showCompass = true,
   showScale = true,
+  accuracyMeters = null,
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
@@ -49,6 +52,31 @@ export function MapView({
         if (showScale) map.addControl(new ScaleControl({ unit: 'metric' }), 'bottom-right');
 
         map.on('load', () => {
+          if (!map.getSource('accuracy')) {
+            map.addSource('accuracy', {
+              type: 'geojson',
+              data: { type: 'FeatureCollection', features: [] },
+            });
+            map.addLayer({
+              id: 'accuracy-ring',
+              type: 'fill',
+              source: 'accuracy',
+              paint: {
+                'fill-color': '#6d28d9',
+                'fill-opacity': 0.15,
+              },
+            });
+            map.addLayer({
+              id: 'accuracy-ring-line',
+              type: 'line',
+              source: 'accuracy',
+              paint: {
+                'line-color': '#6d28d9',
+                'line-width': 1.5,
+                'line-opacity': 0.4,
+              },
+            });
+          }
           if (!map.getSource('trail')) {
             map.addSource('trail', {
               type: 'geojson',
@@ -125,6 +153,29 @@ export function MapView({
     const geojson = trailToGeoJSON(trail);
     (mapRef.current.getSource('trail') as any).setData(geojson);
   }, [trail]);
+
+  // Accuracy ring: a filled circle approximating the GPS accuracy radius.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.getSource('accuracy')) return;
+    if (userLat === null || userLng === null || !accuracyMeters || accuracyMeters <= 0) {
+      (map.getSource('accuracy') as any).setData({ type: 'FeatureCollection', features: [] });
+      return;
+    }
+    const points: Array<[number, number]> = [];
+    for (let a = 0; a < 360; a += 10) {
+      const rad = (a * Math.PI) / 180;
+      // Approximate meters→degrees at this latitude (fine for a visual ring).
+      const dLat = (accuracyMeters / 110_540) * Math.sin(rad);
+      const dLng = (accuracyMeters / (111_320 * Math.cos((userLat * Math.PI) / 180))) * Math.cos(rad);
+      points.push([userLng + dLng, userLat + dLat]);
+    }
+    points.push(points[0]);
+    (map.getSource('accuracy') as any).setData({
+      type: 'FeatureCollection',
+      features: [{ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [points] } }],
+    });
+  }, [userLat, userLng, accuracyMeters, mapLoaded]);
 
   function placeMarker(map: any, lng: number, lat: number) {
     const M = mlRef.current?.Marker;

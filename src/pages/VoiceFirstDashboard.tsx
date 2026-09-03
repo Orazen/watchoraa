@@ -1,13 +1,73 @@
 // Voice-first dashboard (v0.4): current status at top, large primary action
 // cards, a persistent voice button, and the emergency control always in reach.
 
+import { useEffect, useState } from 'react';
 import { PrimaryActionCard, StatusBanner } from '../components/PrimaryActionCard';
 import { EmergencyControl, type EmergencyStatus } from '../components/EmergencyControl';
 import { PermissionStatusCard } from '../permissions/PermissionStatusCard';
 import { VoiceControlButton } from '../voice/VoiceControlButton';
+import { MapView } from '../MapView';
 import type { PermissionService } from '../permissions/permissionService';
 
 export type DashboardTab = 'tracking' | 'journey' | 'sos' | 'routes' | 'community' | 'settings';
+
+/** Live Location card: continuous GPS watch with map, accuracy ring, and a
+ *  screen-reader-friendly accuracy summary. Runs only while Home is open. */
+function LiveLocationCard({ onOpenJourney }: { onOpenJourney: () => void }) {
+  const [pos, setPos] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!('geolocation' in navigator)) {
+      setError('This device does not support location services.');
+      return;
+    }
+    const watchId = navigator.geolocation.watchPosition(
+      (p) => {
+        setError(null);
+        setPos({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: Math.round(p.coords.accuracy) });
+      },
+      (err) => setError(err.message || 'Location unavailable.'),
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 15_000 },
+    );
+    return () => navigator.geolocation.clearWatch(watchId);
+  }, []);
+
+  const quality =
+    pos == null
+      ? null
+      : pos.accuracy <= 10
+        ? { label: 'Excellent', tone: 'ok' }
+        : pos.accuracy <= 25
+          ? { label: 'Good', tone: 'ok' }
+          : pos.accuracy <= 60
+            ? { label: 'Fair', tone: 'warn' }
+            : { label: 'Poor', tone: 'warn' };
+
+  return (
+    <div className="status-card live-location-card" role="region" aria-label="Live location">
+      <div className="status-card-head">
+        <span className="status-icon" aria-hidden="true">📍</span>
+        <div>
+          <h3>Live location</h3>
+          <p className="status-line" aria-live="polite">
+            {error
+              ? `Location unavailable: ${error}`
+              : pos
+                ? `Latitude ${pos.lat.toFixed(5)}, longitude ${pos.lng.toFixed(5)}. Accuracy ${pos.accuracy} metres — ${quality?.label ?? 'unknown'}.`
+                : 'Finding your position…'}
+          </p>
+        </div>
+      </div>
+      {pos && (
+        <MapView userLat={pos.lat} userLng={pos.lng} accuracyMeters={pos.accuracy} height="240px" zoom={17} showCompass={false} />
+      )}
+      <button className="ghost-btn" style={{ marginTop: 10 }} onClick={onOpenJourney}>
+        Start a monitored Safe Journey with this location
+      </button>
+    </div>
+  );
+}
 
 export function VoiceFirstDashboard({
   permissionService,
@@ -75,6 +135,8 @@ export function VoiceFirstDashboard({
         </div>
         <PermissionStatusCard service={permissionService} onOpen={onOpenPermissions} />
       </section>
+
+      <LiveLocationCard onOpenJourney={() => onOpenTab('journey')} />
 
       <section className="primary-cards">
         <PrimaryActionCard

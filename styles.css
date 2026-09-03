@@ -2378,3 +2378,69 @@ select {
   border: 1px solid var(--ink, #1a1a1a);
   border-radius: 8px;
 }
+
+/* ── Apple-style SOS takeover + Live Location card (v0.7.1) ── */
+.sos-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: #7a0c0c;
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px;
+  text-align: center;
+}
+.sos-overlay-title {
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  margin: 0;
+}
+.sos-countdown {
+  font-size: 6rem;
+  font-weight: 900;
+  line-height: 1;
+  margin: 0;
+  color: #fff;
+}
+.sos-overlay-sub {
+  font-size: 1.05rem;
+  opacity: 0.95;
+  margin: 0;
+  max-width: 30rem;
+}
+.sos-overlay-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(100%, 22rem);
+}
+.sos-cancel-btn {
+  padding: 16px 24px;
+  border-radius: 16px;
+  border: 2px solid #fff;
+  background: #fff;
+  color: #7a0c0c;
+  font-size: 1.1rem;
+  font-weight: 700;
+  cursor: pointer;
+  min-height: 52px;
+}
+.live-location-card .map-wrap,
+.live-location-card [class*="maplibregl"] {
+  border-radius: 12px;
+  overflow: hidden;
+}
+.live-location-card .ghost-btn {
+  width: 100%;
+  min-height: 48px;
+}
+.settings-hint {
+  color: var(--muted, #5b5470);
+  font-size: 0.9rem;
+  margin: 4px 0 0;
+}

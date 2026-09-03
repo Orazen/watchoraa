@@ -2197,6 +2197,111 @@ function SosTab({
   const [sosMessage, setSosMessage] = useState('I need help. Please check on me.');
   const [sending, setSending] = useState(false);
   const [shareLocOnAdd, setShareLocOnAdd] = useState(false);
+  // Apple-style SOS: full-screen takeover with a spoken countdown, then an
+  // automatic deterministic emergency session. window.confirm is unusable
+  // non-visually; the countdown IS the confirmation.
+  const [countdown, setCountdown] = useState<number | null>(null);
+  const [activeEmergency, setActiveEmergency] = useState<{ id: string; cancelable: boolean } | null>(null);
+
+  function startSosCountdown() {
+    if (countdown != null || sending) return;
+    setCountdown(5);
+    speak('Emergency. Sending S O S in five. Say or tap cancel to stop.', 1, 'sos-countdown-5');
+  }
+
+  function cancelSosCountdown() {
+    if (countdown == null) return;
+    setCountdown(null);
+    speak('Emergency cancelled.', 1, 'sos-cancelled');
+    announce('Emergency cancelled.', 'online');
+  }
+
+  // Countdown tick + auto-send.
+  useEffect(() => {
+    if (countdown == null || countdown <= 0) return;
+    const t = setTimeout(() => {
+      const next = countdown - 1;
+      setCountdown(next);
+      if (next > 0) speak(String(next), 1, `sos-countdown-${next}`);
+    }, 1000);
+    return () => clearTimeout(t);
+  }, [countdown]);
+
+  useEffect(() => {
+    if (countdown !== 0) return;
+    let cancelled = false;
+    (async () => {
+      setSending(true);
+      try {
+        // Grab current position so the session carries live coordinates.
+        let coords: { lat: number; lng: number; accuracy?: number } | undefined;
+        try {
+          const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 5000, maximumAge: 10_000 });
+          });
+          coords = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy };
+        } catch {
+          // Location unavailable: SOS still fires without coordinates.
+        }
+        const { session } = await api.triggerEmergency({
+          lat: coords?.lat,
+          lng: coords?.lng,
+          accuracy: coords?.accuracy,
+          emergencyType: 'sos-button',
+        });
+        if (!cancelled) {
+          setActiveEmergency({ id: session.id, cancelable: true });
+          speak('S O S sent. Your trusted contacts are being notified. Your location is being shared.', 1, 'sos-sent-live');
+          announce('SOS sent. Emergency session active.', 'error');
+        }
+      } catch (error) {
+        if (!cancelled) {
+          // Fallback to the deterministic assistance-request log if the
+          // emergency session endpoint is unreachable.
+          try {
+            const { request } = await api.createAssistanceRequest({ message: sosMessage.trim() || 'I need help.', locationShare: true });
+            onRequestCreated(request);
+            api.grantConsent({ scope: 'LOCATION_SHARING', metadata: { source: 'sos', assistanceRequestId: request.id } }).catch(() => {});
+            announce('SOS request recorded.', 'error');
+            speak('S O S request sent.', 1, 'sos-sent');
+          } catch {
+            announce(error instanceof ApiError ? error.message : 'Could not send the SOS request.', 'error');
+            speak('S O S failed. Try again or call your emergency number.', 1, 'sos-failed');
+          }
+        }
+      } finally {
+        setSending(false);
+        setCountdown(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [countdown]);
+
+  async function cancelActiveEmergency() {
+    if (!activeEmergency) return;
+    try {
+      await api.cancelEmergency(activeEmergency.id);
+      setActiveEmergency(null);
+      announce('Emergency cancelled.', 'online');
+      speak('Emergency cancelled. Your contacts were not notified.', 1, 'sos-live-cancelled');
+    } catch {
+      announce('The cancellation window has closed. Use Resolve when you are safe.', 'warning');
+    }
+  }
+
+  async function resolveActiveEmergency() {
+    if (!activeEmergency) return;
+    try {
+      await api.resolveEmergency(activeEmergency.id);
+      setActiveEmergency(null);
+      announce('Marked as resolved. You are safe.', 'online');
+      speak('Marked as resolved. You are safe.', 1, 'sos-resolved');
+    } catch {
+      announce('Could not resolve this emergency session.', 'error');
+    }
+  }
 
   async function addContact() {
     if (!name.trim()) {
@@ -2246,24 +2351,9 @@ function SosTab({
   }
 
   async function triggerSOS() {
-    const proceed = window.confirm('Send an SOS request? This records an emergency request for your trusted contacts to see.');
-    if (!proceed) return;
-
-    setSending(true);
-    try {
-      const { request } = await api.createAssistanceRequest({ message: sosMessage.trim() || 'I need help.', locationShare: true });
-      onRequestCreated(request);
-      // Record an explicit location-sharing consent grant for this SOS (privacy trail).
-      api
-        .grantConsent({ scope: 'LOCATION_SHARING', metadata: { source: 'sos', assistanceRequestId: request.id } })
-        .catch(() => {});
-      announce('SOS request recorded.', 'error');
-      speak('S O S request sent.', 1, 'sos-sent');
-    } catch (error) {
-      announce(error instanceof ApiError ? error.message : 'Could not send the SOS request.', 'error');
-    } finally {
-      setSending(false);
-    }
+    // Apple-style: replace window.confirm (unusable non-visually) with the
+    // spoken countdown takeover.
+    startSosCountdown();
   }
 
   async function resolveRequest(id: string) {
@@ -2278,10 +2368,46 @@ function SosTab({
 
   return (
     <div className="screen-grid sos-grid">
+      {/* Apple-style full-screen SOS takeover: countdown or live session. */}
+      {(countdown !== null || activeEmergency) && (
+        <div className="sos-overlay" role="alertdialog" aria-modal="true" aria-label="Emergency">
+          {countdown !== null && countdown > 0 ? (
+            <>
+              <p className="sos-overlay-title">Emergency SOS</p>
+              <p className="sos-countdown" aria-live="assertive">{countdown}</p>
+              <p className="sos-overlay-sub">Sending SOS and your location when the countdown ends.</p>
+              <button className="sos-cancel-btn" onClick={cancelSosCountdown} autoFocus>
+                Cancel emergency
+              </button>
+            </>
+          ) : countdown === 0 || sending ? (
+            <>
+              <p className="sos-overlay-title">Sending…</p>
+              <p className="sos-countdown" aria-hidden="true">🚨</p>
+              <p className="sos-overlay-sub">Contacting your trusted contacts.</p>
+            </>
+          ) : activeEmergency ? (
+            <>
+              <p className="sos-overlay-title">SOS active</p>
+              <p className="sos-overlay-sub" role="status" aria-live="assertive">
+                Your emergency is live. Trusted contacts are being notified with your location.
+              </p>
+              <div className="sos-overlay-actions">
+                <button className="sos-cancel-btn" onClick={cancelActiveEmergency} autoFocus>
+                  I'm safe — cancel
+                </button>
+                <button className="ghost-btn" onClick={resolveActiveEmergency}>
+                  Resolve (I'm fine now)
+                </button>
+              </div>
+            </>
+          ) : null}
+        </div>
+      )}
       <section className="panel sos-hero">
         <div className="section-head">
           <h2>SOS center</h2>
-          <button className="sos-button" onClick={triggerSOS} disabled={sending}>
+          <button className="sos-button" onClick={triggerSOS} disabled={sending || countdown != null}>
             {sending ? 'Sending…' : <><span aria-hidden="true">🚨</span> Send SOS</>}
           </button>
         </div>

@@ -10,9 +10,6 @@ import { asyncHandler } from '../lib/asyncHandler.js';
 import { requireAuth } from '../lib/auth.js';
 import { safeFetch } from '../lib/safe-url.js';
 
-export const geocodeRouter = Router();
-geocodeRouter.use(requireAuth);
-
 const NOMINATIM_BASE = process.env.NOMINATIM_BASE_URL ?? 'https://nominatim.openstreetmap.org';
 const NOMINATIM_UA = 'Watchora/1.0 (assistive navigation for blind users; contact: operator@watchora.app)';
 
@@ -110,4 +107,4 @@ export async function nominatimProvider(lat: number, lng: number): Promise<Place
   };
 }
 
-export const geocodeRouterActive: Router = makeGeocodeRouter();
+export const geocodeRouter: Router = makeGeocodeRouter();
