@@ -6,10 +6,26 @@ import { PrimaryActionCard, StatusBanner } from '../components/PrimaryActionCard
 import { EmergencyControl, type EmergencyStatus } from '../components/EmergencyControl';
 import { PermissionStatusCard } from '../permissions/PermissionStatusCard';
 import { VoiceControlButton } from '../voice/VoiceControlButton';
+import { WatchoraOrb, type OrbState } from '../components/WatchoraOrb';
 import { MapView } from '../MapView';
 import type { PermissionService } from '../permissions/permissionService';
+import type { VoiceState } from '../voice/VoiceAssistantProvider';
 
 export type DashboardTab = 'tracking' | 'journey' | 'sos' | 'routes' | 'community' | 'settings';
+
+/** Maps the real voice-assistant state to the orb visual. Hazard speech
+ *  overrides everything (red orb) via the `hazardActive` flag from App. */
+function orbStateFor(voice: VoiceState, hazardActive: boolean, offline: boolean): OrbState {
+  if (offline) return 'error';
+  if (hazardActive) return 'hazard';
+  switch (voice) {
+    case 'listening': return 'listening';
+    case 'processing': return 'processing';
+    case 'speaking': return 'speaking';
+    case 'error': case 'permission-needed': case 'unsupported': return 'error';
+    default: return 'idle';
+  }
+}
 
 /** Live Location card: continuous GPS watch with map, accuracy ring, and a
  *  screen-reader-friendly accuracy summary. Runs only while Home is open. */
@@ -74,6 +90,9 @@ export function VoiceFirstDashboard({
   emergency,
   activeJourney,
   offline,
+  voiceState,
+  hazardActive = false,
+  onOrbToggle,
   onOpenTab,
   onOpenPermissions,
   onEmergency,
@@ -85,6 +104,11 @@ export function VoiceFirstDashboard({
   emergency: EmergencyStatus;
   activeJourney: { destination: string; status: string } | null;
   offline: boolean;
+  /** Live voice-assistant state drives the orb. */
+  voiceState?: VoiceState;
+  /** True while hazard/emergency speech is active — turns the orb red. */
+  hazardActive?: boolean;
+  onOrbToggle?: () => void;
   onOpenTab: (tab: DashboardTab) => void;
   onOpenPermissions: () => void;
   onEmergency: (payload: { lat?: number; lng?: number; battery?: number }) => void;
@@ -102,7 +126,15 @@ export function VoiceFirstDashboard({
           </h2>
         </div>
         <div className="control-inline">
-          <VoiceControlButton />
+          {voiceState !== undefined && onOrbToggle ? (
+            <WatchoraOrb
+              state={orbStateFor(voiceState, hazardActive, offline)}
+              size={110}
+              onClick={onOrbToggle}
+            />
+          ) : (
+            <VoiceControlButton />
+          )}
         </div>
       </header>
 

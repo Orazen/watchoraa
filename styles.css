@@ -2444,3 +2444,24 @@ select {
   font-size: 0.9rem;
   margin: 4px 0 0;
 }
+
+/* ── Watchora Orb (voice status visual, from Jarvis MIT) ── */
+.watchora-orb {
+  position: relative;
+  cursor: pointer;
+  border-radius: 50%;
+  outline-offset: 4px;
+}
+.watchora-orb:focus-visible {
+  outline: 2px solid var(--primary-strong, #6d28d9);
+}
+.watchora-orb-label {
+  position: absolute;
+  inset: auto 0 -1.4rem 0;
+  text-align: center;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted, #5b5470);
+  pointer-events: none;
+}

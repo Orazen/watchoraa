@@ -433,6 +433,8 @@ function MainApp({
   // Vision coaching mode (v0.5): proactive, deterministic navigation/reading/
   // exploration/shopping guidance layered on the local hazard detections.
   const [coachMode, setCoachMode] = useState<CoachMode>('off');
+  // True while hazard/emergency speech is in the air — drives the red orb.
+  const [hazardActive, setHazardActive] = useState(false);
   const [hapticSettings, setHapticSettings] = useState<HapticSettings>({
     hapticsEnabled: true,
     toneEnabled: true,
@@ -608,7 +610,9 @@ function MainApp({
       else if (a.haptic === 'hazard-nearby') fireHapticEvent('hazard-nearby', hapticSettings);
       else if (a.haptic === 'clear') fireHapticEvent('clear', hapticSettings);
       playDirectionalCue(a.pan);
+      if (a.haptic === 'hazard-immediate' || a.haptic === 'hazard-nearby') setHazardActive(true);
       speak(a.text, a.priority as SpeechPriority, a.dedupeKey);
+      if (a.haptic !== 'clear') setHazardActive(false);
     },
   });
 
@@ -1839,6 +1843,9 @@ function MainApp({
                   emergency={{ state: 'idle' }}
                   activeJourney={null}
                   offline={!navigator.onLine}
+                  voiceState={voiceAssistant.state}
+                  hazardActive={hazardActive || hazardState.topHazard != null && hazardState.topHazard.className === 'person'}
+                  onOrbToggle={() => voiceAssistant.toggleListening()}
                   onOpenTab={(t) => setActiveTab(t as TabKey)}
                   onOpenPermissions={() => setShowPermissions(true)}
                   onEmergency={() => {
