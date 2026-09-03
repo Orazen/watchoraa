@@ -69,3 +69,18 @@ export function describeRelativePosition(from: Coordinates, to: Coordinates): st
   const bearing = bearingDegrees(from, to);
   return `${formatDistance(meters)} away, to the ${compassDirection(bearing)}`;
 }
+
+/** Compass bearing → clock-face phrase (12 = straight ahead). Soundscape-style
+ *  spatial description: blind users orient better to clock positions than to
+ *  compass words when they know roughly which way they are facing. */
+export function clockFromBearing(bearing: number): string {
+  const hour = Math.round(bearing / 30) % 12 || 12;
+  return `${hour} o'clock`;
+}
+
+/** Full spoken summary for a saved place: "Home, 340 m away, at about 9 o'clock." */
+export function describePlaceAsSpoken(from: Coordinates, to: Coordinates, name: string): string {
+  const meters = distanceMeters(from, to);
+  const clock = clockFromBearing(bearingDegrees(from, to));
+  return `${name}, ${formatDistance(meters)} away, at about ${clock}.`;
+}

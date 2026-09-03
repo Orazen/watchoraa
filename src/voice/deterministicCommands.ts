@@ -163,7 +163,7 @@ export function matchDeterministicCommand(transcript: string): VoiceIntent | nul
     return intent('start_navigation', { destination: dest, query: 'distance' }, false, 0.9);
   }
   if (has(t, 'where am i')) {
-    return intent('start_navigation', { query: 'where' }, false, 0.95);
+    return intent('where_am_i', {}, false, 0.95);
   }
 
   // ── Settings / permissions ──

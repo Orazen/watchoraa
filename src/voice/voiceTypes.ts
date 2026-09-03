@@ -4,6 +4,7 @@ export type VoiceIntentName =
   | 'describe_scene'
   | 'read_text'
   | 'start_navigation'
+  | 'where_am_i'
   | 'start_safe_journey'
   | 'stop_safe_journey'
   | 'check_journey'

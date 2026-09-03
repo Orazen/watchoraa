@@ -26,7 +26,7 @@ import { useDeviceMotion } from './navigation/useDeviceMotion';
 import { playDirectionalCue } from './navigation/spatialAudio';
 import type { CoachDetection, CoachMode } from './navigation/navigationCoach';
 import { fireHapticEvent, type HapticSettings } from './haptics';
-import { getCurrentPosition, describeRelativePosition, type Coordinates } from './geo';
+import { getCurrentPosition, describeRelativePosition, describePlaceAsSpoken, distanceMeters, type Coordinates } from './geo';
 import { recognizeText, OCR_FALLBACK_CONFIDENCE_THRESHOLD } from './ocr';
 import { SpeechPriorityManager, type SpeechPriority } from './speechPriority';
 import { LiveAnnouncer, useLiveAnnouncer } from './accessibility/LiveAnnouncer';
@@ -1004,10 +1004,58 @@ function MainApp({
       case 'help':
         speak(HELP_MESSAGE, 5, 'voice-help');
         break;
-      case 'list_places':
-        tab('routes');
-        speak('Opening saved places.', 5, 'voice-places');
+      case 'where_am_i': {
+        // Soundscape-pattern "my location": reverse geocode (road + area) plus
+        // the nearest saved place with clock-direction. Speaks both, fails
+        // honestly per piece (no location / no geocode / no places).
+        getCurrentPosition()
+          .then(async (coords) => {
+            const geo = api.reverseGeocode(coords.latitude, coords.longitude).catch(() => null);
+            const places = api.listPlaces().catch(() => null);
+            const [g, p] = await Promise.all([geo, places]);
+            const parts: string[] = [];
+            if (g?.road) parts.push(`You are on ${g.road}${g.city ? ` in ${g.city}` : ''}.`);
+            else if (g?.display) parts.push(`You are near ${g.display.split(',').slice(0, 2).join(',')}.`);
+            else parts.push('I could not look up your street right now.');
+
+            const withCoords = (p?.places ?? []).filter((pl) => pl.latitude != null && pl.longitude != null);
+            if (withCoords.length > 0) {
+              const nearest = withCoords
+                .map((pl) => ({ pl, dist: distanceMeters(coords, { latitude: pl.latitude as number, longitude: pl.longitude as number }) }))
+                .sort((a, b) => a.dist - b.dist)[0];
+              parts.push(`Nearest saved place: ${describePlaceAsSpoken(coords, { latitude: nearest.pl.latitude as number, longitude: nearest.pl.longitude as number }, nearest.pl.label)}`);
+            }
+            speak(parts.join(' '), 5, 'where-am-i');
+          })
+          .catch(() => speak('I could not get your location. Check that location is allowed for Watchora.', 5, 'where-am-i-noloc'));
         break;
+      }
+      case 'list_places': {
+        tab('routes');
+        // Spoken list (Soundscape pattern): places with distance + clock
+        // direction from the current position, capped at three.
+        getCurrentPosition()
+          .then((coords) => {
+            api
+              .listPlaces()
+              .then(({ places }) => {
+                const withCoords = places.filter((pl) => pl.latitude != null && pl.longitude != null);
+                if (withCoords.length === 0) {
+                  speak('You have no saved places yet. Say save place at any location to add one.', 5, 'places-empty');
+                  return;
+                }
+                const sorted = withCoords
+                  .map((pl) => ({ pl, dist: distanceMeters(coords, { latitude: pl.latitude as number, longitude: pl.longitude as number }) }))
+                  .sort((a, b) => a.dist - b.dist)
+                  .slice(0, 3);
+                const parts = sorted.map(({ pl }) => describePlaceAsSpoken(coords, { latitude: pl.latitude as number, longitude: pl.longitude as number }, pl.label));
+                speak(`${withCoords.length} saved place${withCoords.length === 1 ? '' : 's'}. ${parts.join(' ')}`, 5, 'places-spoken');
+              })
+              .catch(() => speak('I could not load your saved places.', 5, 'places-error'));
+          })
+          .catch(() => speak('I need your location to describe your places by distance.', 5, 'places-noloc'));
+        break;
+      }
       case 'save_place':
         tab('routes');
         speak(params.label ? `Saving this location as ${params.label}. Use the places screen to confirm.` : 'Open the places screen to save this location.', 5, 'voice-save-place');

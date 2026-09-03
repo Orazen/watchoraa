@@ -667,6 +667,11 @@ export const api = {
   listIncidents: () => request<{ incidents: IncidentReport[] }>('/api/incidents'),
   createIncident: (input: { category: string; description: string; severity: IncidentReport['severity']; lat?: number; lng?: number }) =>
     request<{ incident: IncidentReport }>('/api/incidents', { method: 'POST', body: JSON.stringify(input) }),
+  /** Reverse geocoding for "where am I?" (Nominatim via server proxy). */
+  reverseGeocode: (lat: number, lng: number) =>
+    request<{ display: string; road?: string; city?: string; suburb?: string; state?: string; cached?: boolean }>(
+      `/api/geocode/reverse?lat=${lat}&lng=${lng}`,
+    ),
   /** Spoken "what's reported near me?": server-computed distance + age, capped results. */
   incidentsNear: (lat: number, lng: number, radiusMeters = 500) =>
     request<{ reports: Array<{ id: string; category: string; description: string; severity: string; distanceMeters: number; ageDays: number }>; radiusMeters: number }>(
