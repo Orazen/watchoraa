@@ -29,7 +29,7 @@ const lookupLimiter = rateLimit({
   message: { error: 'Too many location lookups. Please wait a moment.' },
 });
 
-interface PlaceInfo {
+export interface PlaceInfo {
   display: string;
   road?: string;
   city?: string;
