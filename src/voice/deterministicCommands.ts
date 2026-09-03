@@ -237,7 +237,7 @@ export function matchDeterministicCommand(transcript: string): VoiceIntent | nul
   }
 
   // ── Saved places / hazards ──
-  if (has(t, 'list my saved places', 'list saved places', 'my saved places')) {
+  if (has(t, 'list my saved places', 'list saved places', 'my saved places', 'list my places', 'my places', 'read my places', 'what are my places', 'where are my places')) {
     return intent('list_places', {}, false, 1);
   }
   if (has(t, 'save this location as', 'save this as', 'save this place')) {

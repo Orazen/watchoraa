@@ -1010,9 +1010,11 @@ function MainApp({
         break;
       case 'where_am_i': {
         // Soundscape-pattern "my location": reverse geocode (road + area) plus
-        // the nearest saved place with clock-direction. Speaks both, fails
-        // honestly per piece (no location / no geocode / no places).
-        getCurrentPosition()
+        // the nearest saved place with clock-direction. GPS timeout gets a
+        // short spoken fallback instead of a long silent hang.
+        const whereTimeout = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Location is taking too long. Try again outdoors.')), 6000));
+        Promise.race([getCurrentPosition(), whereTimeout])
           .then(async (coords) => {
             const geo = api.reverseGeocode(coords.latitude, coords.longitude).catch(() => null);
             const places = api.listPlaces().catch(() => null);
@@ -1031,14 +1033,17 @@ function MainApp({
             }
             speak(parts.join(' '), 5, 'where-am-i');
           })
-          .catch(() => speak('I could not get your location. Check that location is allowed for Watchora.', 5, 'where-am-i-noloc'));
+          .catch((e: Error) => speak(e?.message || 'I could not get your location. Check that location is allowed for Watchora.', 5, 'where-am-i-noloc'));
         break;
       }
       case 'list_places': {
         tab('routes');
         // Spoken list (Soundscape pattern): places with distance + clock
-        // direction from the current position, capped at three.
-        getCurrentPosition()
+        // direction from the current position, capped at three. GPS timeout
+        // speaks a short fallback instead of hanging silently.
+        const placesTimeout = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Location is taking too long. Try again outdoors.')), 6000));
+        Promise.race([getCurrentPosition(), placesTimeout])
           .then((coords) => {
             api
               .listPlaces()
@@ -1057,7 +1062,7 @@ function MainApp({
               })
               .catch(() => speak('I could not load your saved places.', 5, 'places-error'));
           })
-          .catch(() => speak('I need your location to describe your places by distance.', 5, 'places-noloc'));
+          .catch((e: Error) => speak(e?.message || 'I need your location to describe your places by distance.', 5, 'places-noloc'));
         break;
       }
       case 'save_place':
