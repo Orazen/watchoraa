@@ -6,6 +6,7 @@ import { PrimaryActionCard, StatusBanner } from '../components/PrimaryActionCard
 import { EmergencyControl, type EmergencyStatus } from '../components/EmergencyControl';
 import { PermissionStatusCard } from '../permissions/PermissionStatusCard';
 import { VoiceControlButton } from '../voice/VoiceControlButton';
+import { TypeToJarvis } from '../voice/TypeToJarvis';
 import { WatchoraOrb, type OrbState } from '../components/WatchoraOrb';
 import { MapView } from '../MapView';
 import type { PermissionService } from '../permissions/permissionService';
@@ -137,6 +138,8 @@ export function VoiceFirstDashboard({
           )}
         </div>
       </header>
+
+      <TypeToJarvis autoFocus={voiceState !== undefined && (voiceState === 'unsupported' || voiceState === 'permission-needed')} />
 
       {offline && (
         <StatusBanner tone="warn">

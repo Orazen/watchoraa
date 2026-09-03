@@ -2465,3 +2465,34 @@ select {
   color: var(--muted, #5b5470);
   pointer-events: none;
 }
+
+/* ── Type-to-Jarvis text command bar ── */
+.type-jarvis {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--border, #e5e0f0);
+  border-radius: 14px;
+  background: var(--panel, #f6f2ff);
+}
+.type-jarvis-label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted, #5b5470);
+  margin-bottom: 8px;
+}
+.type-jarvis-row {
+  display: flex;
+  gap: 8px;
+}
+.type-jarvis-row input {
+  flex: 1;
+  min-height: 48px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border, #d8d0ea);
+  font-size: 1rem;
+}
+.type-jarvis-row .primary-btn {
+  min-height: 48px;
+}
