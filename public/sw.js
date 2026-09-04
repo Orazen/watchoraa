@@ -27,6 +27,7 @@ async function warmMlAssets() {
     if (already.length) return; // warmed in this cache generation
     const WARM_LIST = [
       '/models/yolov8n.onnx',
+      '/models/depth-anything-v2-small-q.onnx',
       // onnxruntime-web (actual files shipped in /ort)
       '/ort/ort-wasm-simd-threaded.wasm',
       '/ort/ort-wasm-simd-threaded.jsep.wasm',

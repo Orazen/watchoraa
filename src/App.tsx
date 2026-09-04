@@ -26,6 +26,7 @@ import { useDeviceMotion } from './navigation/useDeviceMotion';
 import { playDirectionalCue } from './navigation/spatialAudio';
 import type { CoachDetection, CoachMode } from './navigation/navigationCoach';
 import { fireHapticEvent, type HapticSettings } from './haptics';
+import { useDepthSafety, depthAlertSpeech, type DepthAlert } from './useDepthSafety';
 import { getCurrentPosition, describeRelativePosition, describePlaceAsSpoken, distanceMeters, type Coordinates } from './geo';
 import { recognizeText, OCR_FALLBACK_CONFIDENCE_THRESHOLD } from './ocr';
 import { SpeechPriorityManager, type SpeechPriority } from './speechPriority';
@@ -551,6 +552,24 @@ function MainApp({
   // Web Worker). Runs continuously while the camera is on, independent of the
   // on-demand Gemini "Capture & analyze" flow — see docs/yolo-ocr-slam-plan.md.
   const hazardState = useHazardDetection(videoRef, cameraActive && hazardLayerEnabled, hapticSettings);
+
+  // Depth safety layer (Eyeris-inspired): on-device monocular depth catches
+  // close surfaces YOLO cannot classify — walls, poles, overhangs. Runs at
+  // its own ~4s cadence when the camera is on; alerts speak at priority 2.
+  const onDepthAlert = useCallback((alert: DepthAlert) => {
+    const text = depthAlertSpeech(alert);
+    if (alert.level === 'very-close') fireHapticEvent('hazard-immediate', hapticSettings);
+    else fireHapticEvent('hazard-nearby', hapticSettings);
+    speak(text, 2, `depth-${alert.zone}-${alert.level}`);
+  }, [hapticSettings, speak]);
+  const depthSafety = useDepthSafety(cameraActive && hazardLayerEnabled, onDepthAlert, hapticSettings);
+  useEffect(() => {
+    if (!cameraActive || !hazardLayerEnabled || depthSafety.status !== 'running') return;
+    const t = setInterval(() => {
+      depthSafety.submitFrame(videoRef.current);
+    }, 4000);
+    return () => clearInterval(t);
+  }, [cameraActive, hazardLayerEnabled, depthSafety.status, depthSafety.submitFrame]);
 
   // Real-device performance audit (2026-08-07) found the YOLOv8n model is
   // ~12MB — on throttled mobile data (e.g. 4G) that can take up to a minute
