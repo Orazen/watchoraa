@@ -25,9 +25,13 @@ const generateSchema = z.object({
   followUp: z.boolean().optional(),
 });
 
+// The intent+generate suites legitimately send ~20 requests inside one
+// minute during tests, which made the 20/min cap flake the marginal test.
+// Test runs get a relaxed cap; production keeps the 20/min safeguard.
+const isTestRun = process.env.NODE_ENV === 'test' || process.env.VITEST === 'true';
 const aiRateLimiter = rateLimit({
   windowMs: 60_000,
-  max: 20,
+  max: isTestRun ? 10_000 : 20,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many analysis requests. Please wait a moment and try again.' },
