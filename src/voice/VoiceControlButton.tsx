@@ -19,7 +19,7 @@ const STATE_LABEL: Record<string, string> = {
   'permission-needed': 'Microphone permission needed. Open Permission Centre.',
   offline: 'Voice control is offline.',
   error: 'Voice control had an error. Try again.',
-  unsupported: 'Voice control is not supported by this browser.',
+  unsupported: 'Voice input is not available here. Type your command in the text box below.',
 };
 
 const STATE_ICON: Record<string, string> = {
@@ -77,14 +77,24 @@ export function VoiceControlButton({ className = '' }: { className?: string }) {
           ? 'Speaking'
           : state === 'processing'
             ? 'Understanding'
-            : 'Hands-free voice on'
+            : state === 'unsupported'
+              ? 'Voice unavailable'
+              : state === 'offline'
+                ? 'Voice offline'
+                : state === 'error'
+                  ? 'Voice error'
+                  : 'Hands-free voice on'
     : state === 'listening'
       ? 'Listening…'
       : state === 'processing'
         ? 'Understanding…'
         : state === 'speaking'
           ? 'Speaking…'
-          : 'Talk to Watchora';
+          : state === 'unsupported'
+            ? 'Voice unavailable'
+            : state === 'permission-needed'
+              ? 'Microphone needed'
+              : 'Talk to Watchora';
 
   return (
     <button

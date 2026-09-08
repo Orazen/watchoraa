@@ -132,6 +132,10 @@ button {
   border: 2px solid var(--panel-border-strong, var(--panel-border));
   box-shadow: var(--shadow);
   border-radius: var(--radius-lg);
+  /* Base inner padding so text never touches the rounded border. Variants
+     (.topbar, .sidebar, .sos-hero, …) re-declare their own padding later in
+     this file, which wins at equal specificity. */
+  padding: 20px;
 }
 
 .theme-dark .nav-icon,

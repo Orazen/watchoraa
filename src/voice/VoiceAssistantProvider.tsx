@@ -15,7 +15,7 @@ import { matchDeterministicCommand } from './deterministicCommands';
 import { matchFeelingPhrase } from './companion';
 import { EMERGENCY_PRIORITY_INTENTS } from './voiceTypes';
 import { ConfirmationManager } from './confirmationManager';
-import { DEFAULT_VOICE_SETTINGS, isHandsFree, HANDS_FREE_ONBOARDING, MIC_PERMISSION_REQUEST, type VoiceIntent, type VoiceSettings } from './voiceTypes';
+import { DEFAULT_VOICE_SETTINGS, isHandsFree, HANDS_FREE_ONBOARDING, MIC_PERMISSION_REQUEST, MIC_UNAVAILABLE_MESSAGE, type VoiceIntent, type VoiceSettings } from './voiceTypes';
 import { loadVoiceSettings, saveVoiceSettings } from './voiceSettingsStorage';
 import { decideHandsFreeAction } from './handsFreeSession';
 import { setRecentCommandContext } from './aiIntentParser';
@@ -101,6 +101,14 @@ const WAKE_COMMAND_TIMEOUT_MS = 12_000;
 const RESTART_DELAY_MS = 700;
 /** Delay after TTS finishes before listening resumes (let echo fade). */
 const RESUME_AFTER_SPEECH_MS = 450;
+/** If onstart has not fired this long after rec.start(), the recognizer is a
+ *  dud (API present but the WebView has no mic entitlement — it silently
+ *  never starts). Without this watchdog the orb would claim "Listening"
+ *  forever while nothing hears anything. */
+const START_WATCHDOG_MS = 4_000;
+/** Consecutive dead starts before voice gives up honestly instead of retrying
+ *  in a silent loop. */
+const MAX_CONSECUTIVE_FAILURES = 3;
 
 export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, getVoiceSettings, aiParser, offline, onBargeIn, bridge }: VoiceAssistantProps) {
   const [state, setState] = useState<VoiceState>('idle');
@@ -129,6 +137,13 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
   const resumeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stopIntentionalRef = useRef(false);
   const permissionDeniedRef = useRef(false);
+  // Dead-mic detection: some embedded browsers expose the SpeechRecognition
+  // API but never actually start it (no mic entitlement). Track consecutive
+  // dead starts; after a few, stop retrying and tell the user honestly.
+  const consecutiveFailuresRef = useRef(0);
+  const micUnavailableRef = useRef(false);
+  const unavailableAnnouncedRef = useRef(false);
+  const startWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const appliedLangRef = useRef<string | null>(null);
   const appliedWakeRef = useRef<boolean | null>(null);
 
@@ -170,8 +185,12 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
       pausedByUserRef.current = false;
       wakeArmedRef.current = false;
       setWakeArmed(false);
+      // Full reset: re-enabling hands-free later gets a fresh attempt even
+      // after the mic was declared unavailable.
+      micUnavailableRef.current = false;
+      consecutiveFailuresRef.current = 0;
       stopRecognition();
-    } else if (supported && !permissionDeniedRef.current) {
+    } else if (supported && !permissionDeniedRef.current && !micUnavailableRef.current) {
       resumeHandsFree();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -214,6 +233,7 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
       recognitionRef.current?.abort();
       clearRestartTimer();
       clearResumeTimer();
+      clearStartWatchdog();
     };
   }, []);
 
@@ -228,6 +248,62 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
     if (resumeTimerRef.current != null) {
       clearTimeout(resumeTimerRef.current);
       resumeTimerRef.current = null;
+    }
+  }
+
+  function clearStartWatchdog() {
+    if (startWatchdogRef.current != null) {
+      clearTimeout(startWatchdogRef.current);
+      startWatchdogRef.current = null;
+    }
+  }
+
+  /** Arms the dead-start watchdog right after rec.start() succeeded without
+   *  throwing. Fires only if onstart never arrived. */
+  function armStartWatchdog() {
+    clearStartWatchdog();
+    startWatchdogRef.current = setTimeout(() => {
+      startWatchdogRef.current = null;
+      if (activeRef.current) handleDeadStart();
+    }, START_WATCHDOG_MS);
+  }
+
+  /** A real session started: failures reset, watchdog no longer needed. */
+  function markRecognizerAlive() {
+    consecutiveFailuresRef.current = 0;
+    clearStartWatchdog();
+  }
+
+  /** Persistent mic failure: stop every retry path and say so out loud.
+   *  Typing (TypeToJarvis) still works — the state steers the user there. */
+  function declareMicUnavailable() {
+    micUnavailableRef.current = true;
+    pausedByUserRef.current = true;
+    activeRef.current = false;
+    recognitionRef.current = null;
+    clearStartWatchdog();
+    setState('unsupported');
+    if (!unavailableAnnouncedRef.current) {
+      unavailableAnnouncedRef.current = true;
+      speakRef.current(MIC_UNAVAILABLE_MESSAGE, 5, 'mic-unavailable');
+    }
+  }
+
+  /** onstart never fired (or start threw): one dead attempt. Give hands-free a
+   *  couple of retries (transient Chrome flakiness) before declaring the mic
+   *  unavailable; push-to-talk just reports the error. */
+  function handleDeadStart() {
+    activeRef.current = false;
+    recognitionRef.current = null;
+    consecutiveFailuresRef.current += 1;
+    if (consecutiveFailuresRef.current >= MAX_CONSECUTIVE_FAILURES) {
+      declareMicUnavailable();
+      return;
+    }
+    if (handsFreeOnRef.current && !pausedByUserRef.current && !stopIntentionalRef.current) {
+      scheduleRestart();
+    } else if (!handsFreeOnRef.current) {
+      setState('error');
     }
   }
 
@@ -300,6 +376,7 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
 
   const stopRecognition = useCallback(() => {
     clearRestartTimer();
+    clearStartWatchdog();
     if (activeRef.current || recognitionRef.current) {
       activeRef.current = false;
       recognitionRef.current?.stop();
@@ -332,6 +409,10 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
       setState('permission-needed');
       return;
     }
+    if (micUnavailableRef.current) {
+      setState('unsupported');
+      return;
+    }
     // Barge-in: if the user is talking while TTS plays, stop the speech.
     if (speechActiveRef.current) onBargeInRef.current?.();
     activeRef.current = true;
@@ -344,6 +425,7 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
     rec.continuous = true;
     rec.interimResults = true;
     rec.onstart = () => {
+      markRecognizerAlive();
       setState('listening');
       if (handsFreeOnRef.current && !welcomedRef.current) {
         welcomedRef.current = true;
@@ -409,26 +491,39 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
         speakRef.current(MIC_PERMISSION_REQUEST, 5, 'mic-permission-request');
         return;
       }
+      if (event.error === 'audio-capture') {
+        // No working microphone / audio capture device. Same honest outcome
+        // as a dead start: stop retrying, tell the user, keep typing working.
+        declareMicUnavailable();
+        return;
+      }
       if (event.error === 'network') {
         setState('offline');
       } else if (event.error === 'no-speech') {
+        consecutiveFailuresRef.current = 0; // mic works, room was just quiet
         setState('idle');
       } else if (event.error === 'aborted') {
         // Restart below handles it.
       } else {
+        consecutiveFailuresRef.current += 1;
+        if (consecutiveFailuresRef.current >= MAX_CONSECUTIVE_FAILURES) {
+          declareMicUnavailable();
+          return;
+        }
         setState('error');
       }
       activeRef.current = false;
       recognitionRef.current = null;
       // Hands-free keeps going through transient errors.
-      if (handsFreeOnRef.current && !permissionDeniedRef.current && !stopIntentionalRef.current) {
+      if (handsFreeOnRef.current && !permissionDeniedRef.current && !stopIntentionalRef.current && !micUnavailableRef.current) {
         scheduleRestart();
       }
     };
     rec.onend = () => {
+      clearStartWatchdog();
       recognitionRef.current = null;
       activeRef.current = false;
-      if (handsFreeOnRef.current && !stopIntentionalRef.current && !permissionDeniedRef.current) {
+      if (handsFreeOnRef.current && !stopIntentionalRef.current && !permissionDeniedRef.current && !micUnavailableRef.current) {
         // Chrome ends sessions periodically; silently restart.
         scheduleRestart();
       } else if (!handsFreeOnRef.current && !activeRef.current) {
@@ -437,14 +532,11 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
     };
     try {
       rec.start();
+      armStartWatchdog();
     } catch {
-      activeRef.current = false;
-      recognitionRef.current = null;
-      // Some browsers block mic start without a user gesture. Fall back to
-      // starting on the first interaction (see installGestureFallback).
-      if (handsFreeOnRef.current && !permissionDeniedRef.current) {
-        scheduleRestart();
-      }
+      // Some browsers block mic start without a user gesture — or the
+      // recognizer is a silent dud. Count it; honest give-up after a few.
+      handleDeadStart();
     }
   }, [settings.language, settings.wakePhraseEnabled, runCommand, stopRecognition]);
 
@@ -452,7 +544,7 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
     clearRestartTimer();
     restartTimerRef.current = setTimeout(() => {
       restartTimerRef.current = null;
-      if (!activeRef.current && handsFreeOnRef.current && !pausedByUserRef.current && !speechActiveRef.current && !permissionDeniedRef.current) {
+      if (!activeRef.current && handsFreeOnRef.current && !pausedByUserRef.current && !speechActiveRef.current && !permissionDeniedRef.current && !micUnavailableRef.current) {
         startHandsFree();
       }
     }, RESTART_DELAY_MS);
@@ -491,10 +583,14 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
   const startListening = useCallback(() => {
     if (handsFreeOnRef.current) {
       // Resume the hands-free session. A tap is also a signal the user wants
-      // voice control back, so clear any earlier permission denial.
+      // voice control back, so clear earlier failures — the mic may have come
+      // back (plugged in, permission granted in browser settings).
       permissionDeniedRef.current = false;
+      micUnavailableRef.current = false;
+      consecutiveFailuresRef.current = 0;
       pausedByUserRef.current = false;
-      setState('listening');
+      // No optimistic state here: onstart flips the orb to listening, and the
+      // watchdog flips it to unsupported if the recognizer never starts.
       startHandsFree();
       return;
     }
@@ -516,7 +612,10 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
     rec.lang = settings.language === 'en' ? 'en-US' : settings.language === 'it' ? 'it-IT' : settings.language;
     rec.continuous = false;
     rec.interimResults = true;
-    rec.onstart = () => setState('listening');
+    rec.onstart = () => {
+      markRecognizerAlive();
+      setState('listening');
+    };
     rec.onresult = (event) => {
       let t = '';
       for (let i = 0; i < event.results.length; i++) {
@@ -528,6 +627,8 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
       if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
         setMicPermission(false);
         setState('permission-needed');
+      } else if (event.error === 'audio-capture') {
+        declareMicUnavailable();
       } else if (event.error === 'network') {
         setState('offline');
       } else if (event.error === 'no-speech') {
@@ -539,16 +640,16 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
       recognitionRef.current = null;
     };
     rec.onend = () => {
+      clearStartWatchdog();
       activeRef.current = false;
       recognitionRef.current = null;
       if (!handsFreeOnRef.current) setState('idle');
     };
     try {
       rec.start();
+      armStartWatchdog();
     } catch {
-      setState('error');
-      activeRef.current = false;
-      recognitionRef.current = null;
+      handleDeadStart();
     }
   }, [settings.language, startHandsFree, stopListening]);
 
