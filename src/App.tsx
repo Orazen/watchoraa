@@ -472,6 +472,10 @@ function MainApp({
   // can pause mic recognition while Watchora itself is talking (its own
   // voice in the mic would otherwise trigger spurious wake phrases/loops).
   const speechActiveCountRef = useRef(0);
+  // Tracks the in-flight speechSynthesis fallback utterance so its release
+  // (real end event or the bound-pause timer) can't touch a newer one.
+  const fallbackUtterRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const fallbackEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   function setSpeechActive(on: boolean) {
     if (on) speechActiveCountRef.current += 1;
     else speechActiveCountRef.current = Math.max(0, speechActiveCountRef.current - 1);
@@ -736,15 +740,37 @@ function MainApp({
 
     // Signal the voice provider so microphone recognition pauses while we
     // talk (the mic would otherwise hear our own voice and could loop).
-    utterance.onstart = () => setSpeechActive(true);
-    utterance.onend = () => {
+    // Some embedded browsers start the utterance and never fire its end
+    // event — speechActive would stay true forever, leaving the orb stuck on
+    // "Speaking" and the microphone paused for good. Bound the pause by an
+    // estimated speaking time; in working browsers the real end event
+    // releases first and this timer is just cancelled.
+    const releaseFallback = (viaTimer: boolean) => {
+      if (fallbackUtterRef.current !== utterance) return; // superseded
+      fallbackUtterRef.current = null;
+      if (fallbackEndTimerRef.current) {
+        clearTimeout(fallbackEndTimerRef.current);
+        fallbackEndTimerRef.current = null;
+      }
       setSpeechActive(false);
-      speechManagerRef.current?.onEnded();
+      // The priority manager has its own 12s lock watchdog, so the timer
+      // path must not also pop its queue (it would double-play what's next).
+      if (!viaTimer) speechManagerRef.current?.onEnded();
     };
-    utterance.onerror = () => {
-      setSpeechActive(false);
-      speechManagerRef.current?.onEnded();
+
+    utterance.onstart = () => {
+      fallbackUtterRef.current = utterance;
+      setSpeechActive(true);
+      // ~14 chars/sec is typical TTS pace; add headroom for slow voices.
+      const estMs = Math.min(
+        120_000,
+        4_000 + (textToSpeak.length / (14 * Math.max(0.5, utterance.rate || 1))) * 1000,
+      );
+      if (fallbackEndTimerRef.current) clearTimeout(fallbackEndTimerRef.current);
+      fallbackEndTimerRef.current = setTimeout(() => releaseFallback(true), estMs);
     };
+    utterance.onend = () => releaseFallback(false);
+    utterance.onerror = () => releaseFallback(false);
     window.speechSynthesis.speak(utterance);
   }
 
