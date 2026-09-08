@@ -272,9 +272,10 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
     }, START_WATCHDOG_MS);
   }
 
-  /** A real session started: failures reset, watchdog no longer needed. */
+  /** A real session started: the watchdog is no longer needed. Failures only
+   *  reset when actual results arrive — some embedded recognizers start fine
+   *  and still can't hear anything (backend network error right after start). */
   function markRecognizerAlive() {
-    consecutiveFailuresRef.current = 0;
     clearStartWatchdog();
   }
 
@@ -446,6 +447,7 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
         if ((event.results[i] as { isFinal?: boolean }).isFinal) isFinal = true;
       }
       t = t.trim();
+      consecutiveFailuresRef.current = 0; // results prove the mic truly works
       if (!t) return;
       setTranscript(t);
       if (!isFinal) {
@@ -503,6 +505,15 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
         return;
       }
       if (event.error === 'network') {
+        // Chrome's speech backend is unreachable (embedded browsers often hit
+        // this forever even when the page loads fine). It is NOT a dead mic —
+        // onstart fires and audio flows — but it never recovers by itself, so
+        // count it toward the same honest give-up.
+        consecutiveFailuresRef.current += 1;
+        if (consecutiveFailuresRef.current >= MAX_CONSECUTIVE_FAILURES) {
+          declareMicUnavailable();
+          return;
+        }
         setState('offline');
       } else if (event.error === 'no-speech') {
         consecutiveFailuresRef.current = 0; // mic works, room was just quiet
@@ -631,6 +642,7 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
       setState('listening');
     };
     rec.onresult = (event) => {
+      consecutiveFailuresRef.current = 0; // results prove the mic truly works
       let t = '';
       for (let i = 0; i < event.results.length; i++) {
         t += event.results[i][0].transcript;
@@ -644,7 +656,12 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
       } else if (event.error === 'audio-capture') {
         declareMicUnavailable();
       } else if (event.error === 'network') {
-        setState('offline');
+        consecutiveFailuresRef.current += 1;
+        if (consecutiveFailuresRef.current >= MAX_CONSECUTIVE_FAILURES) {
+          declareMicUnavailable();
+        } else {
+          setState('offline');
+        }
       } else if (event.error === 'no-speech') {
         setState('idle');
       } else {

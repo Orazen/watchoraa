@@ -121,8 +121,9 @@ export const HANDS_FREE_ONBOARDING =
 export const MIC_PERMISSION_REQUEST =
   'Watchora needs your microphone so you can control it by voice without touching the screen. Please allow the microphone when your browser asks.';
 
-/** Spoken when the recognizer never actually starts (some embedded browsers
- *  expose the SpeechRecognition API but have no mic entitlement) or no audio
- *  capture device answers. Honest failure: voice is off, typing still works. */
+/** Spoken when voice input can't work: the recognizer never actually starts
+ *  (some embedded browsers expose the SpeechRecognition API but have no mic
+ *  entitlement), no audio capture device answers, or the speech backend is
+ *  unreachable. Honest failure: voice is off, typing still works. */
 export const MIC_UNAVAILABLE_MESSAGE =
-  'Your microphone is not responding, so voice input is off right now. You can still type commands in the text box on the home screen.';
+  'Voice input is not working right now because your microphone or its speech service is not responding. You can still type commands in the text box on the home screen.';
