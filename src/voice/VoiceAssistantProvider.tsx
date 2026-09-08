@@ -221,6 +221,13 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
             resumeTimerRef.current = null;
             resumeHandsFree();
           }, RESUME_AFTER_SPEECH_MS);
+        } else if (handsFreeOnRef.current) {
+          // The pause paths ('paused' on user tap, 'unsupported' after the
+          // mic give-up) set their state before this announcement started,
+          // and the announcement's own onstart flipped it to 'speaking'.
+          // Restore the honest terminal state here or the orb would stay on
+          // "Speaking" forever, with nothing actually playing.
+          setState(micUnavailableRef.current ? 'unsupported' : 'paused');
         }
       }
     };
