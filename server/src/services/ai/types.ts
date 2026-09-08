@@ -32,4 +32,12 @@ export class AiProviderError extends Error {
 
 export interface AiProvider {
   generate(request: AiRequest, signal: AbortSignal): Promise<AiResult>;
+  /**
+   * Text-only single-shot completion returning parsed JSON (used by the
+   * voice intent parser). Providers that cannot guarantee JSON should throw
+   * AiProviderError rather than return unstructured text.
+   */
+  completeJson(prompt: string, signal: AbortSignal): Promise<Record<string, unknown>>;
+  /** Short provider identifier used in logs: 'gemini' | 'openai-compatible'. */
+  readonly id: string;
 }

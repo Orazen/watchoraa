@@ -1,7 +1,11 @@
 import { GeminiProvider } from './gemini-provider.js';
+import { OpenAiCompatibleProvider } from './openai-provider.js';
+import { decryptSecret } from '../../lib/secret-box.js';
 import { AiProviderError, type AiProvider, type AiRequest, type AiResult } from './types.js';
 
 export class DemoProvider implements AiProvider {
+  readonly id = 'demo';
+
   async generate(request: AiRequest): Promise<AiResult> {
     if (request.mode === 'emergency') {
       throw new AiProviderError('AI is not used for emergency mode', 'unsupported');
@@ -23,22 +27,56 @@ export class DemoProvider implements AiProvider {
       shouldStop: false,
     };
   }
+
+  async completeJson(): Promise<Record<string, unknown>> {
+    return { intent: 'unknown', parameters: {}, confidence: 0, requiresConfirmation: false };
+  }
 }
 
-let cachedProvider: { key: string; provider: AiProvider } | null = null;
+/** The per-user configuration that selects and parameterizes a provider. */
+export type ResolvedAiConfig =
+  | { source: 'user'; provider: 'GEMINI' | 'OPENAI_COMPATIBLE'; apiKey: string; model: string; baseUrl?: string }
+  | { source: 'server'; provider: 'GEMINI'; apiKey: string; model: string }
+  | { source: 'demo' };
 
-export function getAiProvider(apiKey: string | undefined, model: string): AiProvider {
-  if (!apiKey) {
-    return new DemoProvider();
+export const OPENAI_DEFAULT_BASE_URL = 'https://api.openai.com/v1';
+
+/**
+ * Resolution order: the user's own AI provider settings (their key, their
+ * provider, their model) win; if the user has none, the server-wide Gemini
+ * key applies; with neither, AI runs in demo mode.
+ */
+export function resolveAiConfig(userPref: { provider: string; model: string | null; baseUrl: string | null; apiKeyEnc: string | null } | null, serverKey: string | undefined, serverModel: string): ResolvedAiConfig {
+  if (userPref?.apiKeyEnc) {
+    const apiKey = decryptSecret(userPref.apiKeyEnc);
+    if (userPref.provider === 'OPENAI_COMPATIBLE') {
+      return {
+        source: 'user',
+        provider: 'OPENAI_COMPATIBLE',
+        apiKey,
+        model: userPref.model || 'gpt-4o-mini',
+        baseUrl: userPref.baseUrl || OPENAI_DEFAULT_BASE_URL,
+      };
+    }
+    return { source: 'user', provider: 'GEMINI', apiKey, model: userPref.model || serverModel };
   }
-
-  if (cachedProvider?.key === apiKey) {
-    return cachedProvider.provider;
+  if (serverKey) {
+    return { source: 'server', provider: 'GEMINI', apiKey: serverKey, model: serverModel };
   }
+  return { source: 'demo' };
+}
 
-  const provider = new GeminiProvider(apiKey, model);
-  cachedProvider = { key: apiKey, provider };
-  return provider;
+export function buildProvider(config: ResolvedAiConfig): AiProvider {
+  switch (config.source) {
+    case 'demo':
+      return new DemoProvider();
+    case 'server':
+      return new GeminiProvider(config.apiKey, config.model);
+    case 'user':
+      return config.provider === 'OPENAI_COMPATIBLE'
+        ? new OpenAiCompatibleProvider(config.apiKey, config.model, config.baseUrl ?? OPENAI_DEFAULT_BASE_URL)
+        : new GeminiProvider(config.apiKey, config.model);
+  }
 }
 
 export { AiProviderError };

@@ -143,7 +143,13 @@ export function matchDeterministicCommand(transcript: string): VoiceIntent | nul
   }
 
   // ── Assistance ──
-  if (has(t, 'describe what is ahead', 'what is ahead', 'what is in front', 'describe the scene', 'describe my surroundings', 'what is around me', 'what objects are near')) {
+  // "What is around me" is answered from the LOCAL detections (instant,
+  // offline, no cloud roundtrip) — that is the describe_surroundings intent.
+  // "Describe what is ahead" keeps the full cloud vision analysis.
+  if (has(t, 'what is around me', "what's around me", 'describe my surroundings', 'describe the surroundings', 'what do you see around me')) {
+    return intent('describe_surroundings', {}, false, 1);
+  }
+  if (has(t, 'describe what is ahead', 'what is ahead', 'what is in front', 'describe the scene', 'what objects are near')) {
     return intent('describe_scene', {}, false, 1);
   }
   if (has(t, 'read this', 'read the text', 'read text', 'read what is here', 'read the sign')) {

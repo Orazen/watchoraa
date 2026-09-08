@@ -2,6 +2,7 @@
 
 export type VoiceIntentName =
   | 'describe_scene'
+  | 'describe_surroundings'
   | 'read_text'
   | 'start_navigation'
   | 'where_am_i'

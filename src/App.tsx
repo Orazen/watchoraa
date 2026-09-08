@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError, getToken, getRefreshToken, setSession, clearSession, setToken, localeFromVoice, getCachedUser, setCachedUser } from './api';
+import { AiProviderSection } from './AiProviderSettings';
 import { scanBarcode, cachedProduct, rememberProduct, formatProductSpeech, type ScanHandle } from './barcode/productScan';
 import type {
   AdminAssistanceRequest,
@@ -21,6 +22,7 @@ import type {
   TtsVoice,
 } from './api';
 import { useHazardDetection } from './useHazardDetection';
+import { summarizeEnvironment, describeEnvironment, detectionGroundingPrompt, type PlaceContext } from './environment';
 import { useNavigationCoach } from './navigation/useNavigationCoach';
 import { useDeviceMotion } from './navigation/useDeviceMotion';
 import { playDirectionalCue } from './navigation/spatialAudio';
@@ -551,7 +553,59 @@ function MainApp({
   // Phase A: local, low-latency hazard detection (YOLOv8n via onnxruntime-web, in a
   // Web Worker). Runs continuously while the camera is on, independent of the
   // on-demand Gemini "Capture & analyze" flow — see docs/yolo-ocr-slam-plan.md.
-  const hazardState = useHazardDetection(videoRef, cameraActive && hazardLayerEnabled, hapticSettings);
+  //
+  // Ambient environment approximator (researched vs Seeing AI/Envision/Wayfindr
+  // ITU-T F.921, 2026-09): when new objects cross the tracker's confirmation
+  // gate, speak ONE short deterministic sentence (≤ ~25 words) describing the
+  // scene approximately — no cloud call, no per-object spam. Rate-limited to
+  // one callout per 25s, deduped by identical summary, and gated by verbosity
+  // (Essential mode keeps only hazard/emergency speech; Standard/Detailed get
+  // the ambient description). Place context comes from a cached reverse
+  // geocode refreshed at most every 2 minutes while the camera runs.
+  const ambientEnvRef = useRef<{ lastSpokenAt: number; lastSummary: string; place: PlaceContext | null; placeFetchedAt: number }>({
+    lastSpokenAt: 0,
+    lastSummary: '',
+    place: null,
+    placeFetchedAt: 0,
+  });
+  const ambientVerbosityRef = useRef(voiceAssistant.settings.verbosity);
+  ambientVerbosityRef.current = voiceAssistant.settings.verbosity;
+  const speakRef = useRef(speak);
+  speakRef.current = speak;
+
+  const fetchAmbientPlaceContext = useCallback(async () => {
+    const cache = ambientEnvRef.current;
+    if (Date.now() - cache.placeFetchedAt < 120_000) return cache.place;
+    try {
+      const coords = await getCurrentPosition(6000);
+      const place = await api.reverseGeocode(coords.latitude, coords.longitude).catch(() => null);
+      cache.place = place ? { road: place.road, city: place.city, suburb: place.suburb, name: place.name, addresstype: place.addresstype } : null;
+    } catch {
+      cache.place = null; // indoors / no GPS — object-based inference still works
+    }
+    cache.placeFetchedAt = Date.now();
+    return cache.place;
+  }, []);
+
+  const onConfirmedDetections = useCallback(
+    (confirmed: Array<{ className: string; confidence: number; bearingClock: number }>) => {
+      const now = Date.now();
+      const cache = ambientEnvRef.current;
+      const verbosity = ambientVerbosityRef.current;
+      if (verbosity === 0) return; // Essential: hazards only
+      if (now - cache.lastSpokenAt < 25_000) return; // anti-spam cadence
+      const summary = summarizeEnvironment({ detections: confirmed, place: cache.place });
+      if (summary === cache.lastSummary) return; // nothing new to say
+      cache.lastSpokenAt = now;
+      cache.lastSummary = summary;
+      speakRef.current(summary, 4, 'ambient-env');
+      // Refresh place context opportunistically after speaking, not blocking.
+      void fetchAmbientPlaceContext();
+    },
+    [fetchAmbientPlaceContext],
+  );
+
+  const hazardState = useHazardDetection(videoRef, cameraActive && hazardLayerEnabled, hapticSettings, onConfirmedDetections);
 
   // Depth safety layer (Eyeris-inspired): on-device monocular depth catches
   // close surfaces YOLO cannot classify — walls, poles, overhangs. Runs at
@@ -749,6 +803,16 @@ function MainApp({
         setAnalysisMode('navigation');
         void voiceCaptureAndAnalyze('navigation', 'Describe what is directly ahead of me in a few words, focusing on immediate obstacles and safe path.');
         break;
+      case 'describe_surroundings': {
+        // Instant local answer from the on-device detector — no cloud roundtrip.
+        if (!cameraActive || !hazardLayerEnabled) {
+          speak('Start the camera first so I can sense what is around you. Double-tap the screen to start tracking.', 5, 'describe-surroundings-no-camera');
+          break;
+        }
+        const sentences = describeEnvironment({ detections: hazardState.detections, place: ambientEnvRef.current.place });
+        speak(sentences.join(' '), 5, 'describe-surroundings');
+        break;
+      }
       case 'read_text':
         tab('tracking');
         setAnalysisMode('reading');
@@ -1282,13 +1346,19 @@ function MainApp({
     analysisAbortRef.current = controller;
     const timeout = setTimeout(() => controller.abort(), ANALYSIS_TIMEOUT_MS);
 
+    // Ground the cloud answer in what the on-device detector actually measured
+    // (deterministic, confidence-hedged) so the vision model confirms and
+    // extends local sensing instead of inventing beyond it. Spatial modes only.
+    const grounding = mode === 'navigation' || mode === 'environment' ? detectionGroundingPrompt(hazardState.detections) : '';
+    const groundedPrompt = [grounding, nextPrompt.trim() || 'Analyze the current frame.'].filter(Boolean).join('\n\n');
+
     try {
       const httpResponse = await fetch(`${apiBaseUrl}/api/ai/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           mode,
-          prompt: nextPrompt.trim() || 'Analyze the current frame.',
+          prompt: groundedPrompt,
           imageDataUrl,
           followUp: opts?.followUp === true,
         }),
@@ -3267,6 +3337,7 @@ function SettingsTab({
         </div>
       </section>
       <section className="panel settings-panel-stack">
+        <AiProviderSection announce={announce} speak={(text) => speak(text)} />
         <div className="settings-section">
           <h3>Interface</h3>
           <button className="ghost-btn" onClick={() => onThemeChange(themeMode === 'Light' ? 'Dark' : 'Light')}>

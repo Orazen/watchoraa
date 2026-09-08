@@ -12,8 +12,17 @@ ort.env.wasm.numThreads = 1; // single-thread WASM avoids cross-origin-isolation
 
 const MODEL_URL = '/models/yolov8n.onnx';
 const INPUT_SIZE = 640;
-const SCORE_THRESHOLD = 0.45;
-const IOU_THRESHOLD = 0.45;
+// Ultralytics' predict default is 0.25; the official onnxruntime-web demos run
+// 0.2–0.5. A high static threshold (0.45) trades recall for precision and
+// misses small/distant objects — the failure mode that matters most for a
+// blind user. We run lower here and let the temporal tracker (K-of-N
+// confirmation) kill the extra flicker instead. See the YOLO ONNX research
+// notes (Ultralytics head.py + nms.py, Hyuto/yolov8-onnxruntime-web).
+const SCORE_THRESHOLD = 0.3;
+const IOU_THRESHOLD = 0.45; // class-aware NMS, matching the library's function default
+// Post-NMS cap for a single frame. YOLO's own max_det is 300, but spoken
+// guidance only needs the strongest handful — anything past this is noise.
+const MAX_DETECTIONS = 20;
 
 export type Detection = {
   className: string;
@@ -116,19 +125,26 @@ async function runInference(bitmap: ImageBitmap): Promise<Detection[]> {
   const outputName = activeSession.outputNames[0];
   const output = outputMap[outputName];
 
-  // YOLOv8/11 export shape: [1, 84, 8400] — 4 box coords + 80 class scores, per anchor.
+  // YOLOv8 export shape is [1, 84, 8400] (channel-major), but some
+  // export/toolchain combos yield [1, 8400, 84] (anchor-major). The official
+  // Ultralytics example transposes unconditionally and silently breaks on the
+  // transposed layout — instead, detect orientation from the dims (84 < 8400).
   const dims = output.dims;
-  const numAttrs = dims[1]; // 84
-  const numAnchors = dims[2]; // 8400
+  const numAttrs = Math.min(dims[1], dims[2]); // 84 = 4 box + 80 classes
+  const numAnchors = Math.max(dims[1], dims[2]); // 8400
+  const channelMajor = dims[1] === numAttrs; // [1,84,8400] → true; [1,8400,84] → false
   const numClasses = numAttrs - 4;
   const data = output.data as Float32Array;
+
+  // Channel-major index: attribute `a` at anchor `k`. Anchor-major: swapped.
+  const at = channelMajor ? (a: number, k: number) => data[a * numAnchors + k] : (a: number, k: number) => data[k * numAttrs + a];
 
   const detections: Detection[] = [];
   for (let anchor = 0; anchor < numAnchors; anchor++) {
     let bestClass = -1;
     let bestScore = 0;
     for (let c = 0; c < numClasses; c++) {
-      const score = data[(4 + c) * numAnchors + anchor];
+      const score = at(4 + c, anchor);
       if (score > bestScore) {
         bestScore = score;
         bestClass = c;
@@ -136,10 +152,10 @@ async function runInference(bitmap: ImageBitmap): Promise<Detection[]> {
     }
     if (bestScore < SCORE_THRESHOLD || bestClass < 0) continue;
 
-    const cx = data[0 * numAnchors + anchor];
-    const cy = data[1 * numAnchors + anchor];
-    const w = data[2 * numAnchors + anchor];
-    const h = data[3 * numAnchors + anchor];
+    const cx = at(0, anchor);
+    const cy = at(1, anchor);
+    const w = at(2, anchor);
+    const h = at(3, anchor);
 
     // Undo letterbox -> normalized [0,1] coords in the original frame.
     const boxCenterX = (cx - padX) / scale;
@@ -161,7 +177,9 @@ async function runInference(bitmap: ImageBitmap): Promise<Detection[]> {
     });
   }
 
-  return nonMaxSuppression(detections);
+  return nonMaxSuppression(detections)
+    .sort((a, b) => b.confidence - a.confidence)
+    .slice(0, MAX_DETECTIONS);
 }
 
 type WorkerRequest =
@@ -178,6 +196,20 @@ self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   try {
     if (message.type === 'warmup') {
       await getSession();
+      // Run one inference on a blank letterbox-gray frame so the WASM graph,
+      // memory plans and first-call allocations are paid now instead of on the
+      // user's first real capture (which would add seconds of latency).
+      try {
+        const canvas = new OffscreenCanvas(INPUT_SIZE, INPUT_SIZE);
+        const ctx = canvas.getContext('2d')!;
+        ctx.fillStyle = 'rgb(114,114,114)';
+        ctx.fillRect(0, 0, INPUT_SIZE, INPUT_SIZE);
+        const bitmap = canvas.transferToImageBitmap();
+        await runInference(bitmap);
+        bitmap.close();
+      } catch {
+        // Warmup is best-effort; real detections will surface any real error.
+      }
       (self as unknown as { postMessage: (m: WorkerResponse) => void }).postMessage({ type: 'ready' });
       return;
     }

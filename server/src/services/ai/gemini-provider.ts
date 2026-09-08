@@ -14,6 +14,8 @@ const modelResponseSchema = z.object({
 const GEMINI_TIMEOUT_MS = 15_000;
 
 export class GeminiProvider implements AiProvider {
+  readonly id = 'gemini';
+
   constructor(
     private readonly apiKey: string,
     private readonly model: string,
@@ -105,5 +107,42 @@ export class GeminiProvider implements AiProvider {
       confidence: parsed.data.confidence,
       shouldStop: parsed.data.shouldStop,
     };
+  }
+
+  /** Text-only JSON completion for the voice intent parser. */
+  async completeJson(prompt: string, signal: AbortSignal): Promise<Record<string, unknown>> {
+    const timeoutController = new AbortController();
+    const timeout = setTimeout(() => timeoutController.abort(), GEMINI_TIMEOUT_MS);
+    const onExternalAbort = () => timeoutController.abort();
+    signal.addEventListener('abort', onExternalAbort);
+
+    try {
+      const response = await safeFetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text: prompt }] }],
+            generationConfig: { responseMimeType: 'application/json', temperature: 0.1 },
+          }),
+          signal: timeoutController.signal,
+        },
+      );
+      if (!response.ok) {
+        throw new AiProviderError(`Gemini error (status ${response.status})`, response.status === 401 || response.status === 403 ? 'invalid_key' : 'provider_error');
+      }
+      const payload = (await response.json()) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+      const text = payload.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!text) throw new AiProviderError('Gemini returned an empty response', 'provider_error');
+      return JSON.parse(text.replace(/```json|```/g, '').trim()) as Record<string, unknown>;
+    } catch (error) {
+      if (error instanceof AiProviderError) throw error;
+      if (timeoutController.signal.aborted) throw new AiProviderError('Gemini request timed out', 'timeout');
+      throw new AiProviderError(error instanceof Error ? error.message : 'Gemini request failed', 'provider_error');
+    } finally {
+      clearTimeout(timeout);
+      signal.removeEventListener('abort', onExternalAbort);
+    }
   }
 }

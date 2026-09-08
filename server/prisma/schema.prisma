@@ -86,7 +86,8 @@ model User {
   passwordResets         PasswordReset[]
   refreshTokens          RefreshToken[]
   emergencySessions      EmergencySession[]
-  taughtThings         TaughtThing[]
+  taughtThings           TaughtThing[]
+  aiProviderPref         AiProviderPref?
 }
 
 model PasswordReset {
@@ -312,6 +313,20 @@ model TaughtThing {
 
   @@index([userId])
   @@unique([userId, name])
+}
+
+model AiProviderPref {
+  id             String   @id @default(cuid())
+  userId         String   @unique
+  // 'GEMINI' (generativelanguage API) or 'OPENAI_COMPATIBLE' (OpenAI, Groq,
+  // OpenRouter, self-hosted vLLM/Ollama — anything speaking /chat/completions).
+  provider       String   @default("GEMINI")
+  model          String?
+  baseUrl        String?
+  apiKeyEnc      String? // AES-256-GCM (iv:tag:cipher, base64) — never returned to clients
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model PromptVersion {

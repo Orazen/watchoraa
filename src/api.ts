@@ -176,6 +176,14 @@ export type TtsVoice = {
   gender: 'Male' | 'Female';
 };
 
+export type AiProviderSettings = {
+  provider: 'GEMINI' | 'OPENAI_COMPATIBLE';
+  model: string | null;
+  baseUrl: string | null;
+  hasKey: boolean;
+  maskedKey: string | null;
+};
+
 export type SafeJourney = {
   id: string;
   destination: string;
@@ -669,7 +677,7 @@ export const api = {
     request<{ incident: IncidentReport }>('/api/incidents', { method: 'POST', body: JSON.stringify(input) }),
   /** Reverse geocoding for "where am I?" (Nominatim via server proxy). */
   reverseGeocode: (lat: number, lng: number) =>
-    request<{ display: string; road?: string; city?: string; suburb?: string; state?: string; cached?: boolean }>(
+    request<{ display: string; road?: string; city?: string; suburb?: string; state?: string; name?: string; addresstype?: string; cached?: boolean }>(
       `/api/geocode/reverse?lat=${lat}&lng=${lng}`,
     ),
   /** Spoken "what's reported near me?": server-computed distance + age, capped results. */
@@ -806,6 +814,16 @@ export const api = {
       '/api/ai/intent',
       { method: 'POST', body: JSON.stringify({ transcript }) },
     ),
+
+  // ── AI provider mode (bring-your-own key; key stored encrypted, masked on read) ──
+  getAiProviderSettings: () => request<{ providerSettings: AiProviderSettings }>('/api/ai-provider'),
+  upsertAiProviderSettings: (input: {
+    provider: 'GEMINI' | 'OPENAI_COMPATIBLE';
+    model?: string | null;
+    baseUrl?: string | null;
+    apiKey?: string | null;
+  }) => request<{ providerSettings: AiProviderSettings }>('/api/ai-provider', { method: 'PUT', body: JSON.stringify(input) }),
+  deleteAiProviderKey: () => request<{ ok: boolean; providerSettings: AiProviderSettings }>('/api/ai-provider/key', { method: 'DELETE' }),
 
   // ── Caregiver live-location map (consent-gated) ──
   caregiverUserLocation: (userId: string) =>

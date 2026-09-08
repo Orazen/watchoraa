@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Detection } from './yolo.worker';
 import { HAZARD_CLASSES, LANDMARK_CLASSES } from './coco-classes';
 import { fireHapticEvent, type HapticSettings } from './haptics';
+import { DetectionTracker } from './detectionTracker';
 
 // How often we sample a frame for local detection. Not every frame — battery/thermal
 // budget matters (see docs/yolo-ocr-slam-plan.md "Explicit Non-Goals / Risks").
@@ -9,7 +10,10 @@ const DETECTION_INTERVAL_MS = 600;
 // A box covering more than this fraction of the frame area is treated as "immediate" —
 // i.e. close enough that it's the dominant thing in view, not just visible somewhere.
 const IMMEDIATE_AREA_THRESHOLD = 0.12;
-// Below this confidence we do not act at all — OKO's "fail silent, not fail loud."
+// Minimum per-frame confidence to consider for haptic classification. The worker
+// already floors raw detections at 0.30 (recall-first); this haptic layer still
+// wants the higher-precision band, and the tracker requires 3 consecutive hits
+// on top — so flicker can't buzz the user's wrist.
 const MIN_ACT_CONFIDENCE = 0.5;
 
 export type HazardState = {
@@ -47,6 +51,7 @@ export function useHazardDetection(
   videoRef: React.RefObject<HTMLVideoElement | null>,
   active: boolean,
   hapticSettings: HapticSettings,
+  onConfirmedDetections?: (detections: Detection[]) => void,
 ) {
   const [state, setState] = useState<HazardState>({
     detections: [],
@@ -65,6 +70,9 @@ export function useHazardDetection(
   const frameTimestampsRef = useRef<number[]>([]);
   const hapticSettingsRef = useRef(hapticSettings);
   hapticSettingsRef.current = hapticSettings;
+  const trackerRef = useRef<DetectionTracker | null>(null);
+  const onConfirmedRef = useRef(onConfirmedDetections);
+  onConfirmedRef.current = onConfirmedDetections;
 
   const tick = useCallback(() => {
     const video = videoRef.current;
@@ -89,11 +97,13 @@ export function useHazardDetection(
       intervalRef.current = null;
       workerRef.current?.terminate();
       workerRef.current = null;
+      trackerRef.current = null;
       setState((s) => ({ ...s, status: 'idle', detections: [], topHazard: null }));
       return;
     }
 
     setState((s) => ({ ...s, status: 'warming-up', errorMessage: null }));
+    trackerRef.current = new DetectionTracker();
 
     const worker = new Worker(new URL('./yolo.worker.ts', import.meta.url), { type: 'module' });
     workerRef.current = worker;
@@ -126,7 +136,12 @@ export function useHazardDetection(
       frameTimestampsRef.current = frameTimestampsRef.current.filter((t) => now - t < 3000);
       const fps = frameTimestampsRef.current.length / 3;
 
-      const { event: hazardEvent, top } = classifyEvent(message.detections);
+      // Temporal smoothing: detections must persist 3 consecutive frames
+      // (~1.8s at our 600ms cadence) before the app treats them as real.
+      const tracker = trackerRef.current;
+      const smoothed = tracker ? tracker.update(message.detections, Date.now()) : message.detections;
+
+      const { event: hazardEvent, top } = classifyEvent(smoothed);
 
       // Fail-silent-on-uncertainty: only fire a haptic/tone event when the classified
       // event actually changed, so we don't buzz continuously while a hazard stays
@@ -136,8 +151,17 @@ export function useHazardDetection(
         lastEventRef.current = hazardEvent;
       }
 
+      // Environment layer callback: only when something new crossed the
+      // confirmation gate (or a cooled-down track re-fired), so consumers can
+      // refresh their spoken summary without being spammed every cycle. The
+      // full confirmed set is passed (not just the newly-confirmed subset) so
+      // the consumer can summarize the whole scene in one utterance.
+      if (onConfirmedRef.current && smoothed.some((d) => d.isNewlyConfirmed)) {
+        onConfirmedRef.current(smoothed);
+      }
+
       setState({
-        detections: message.detections,
+        detections: smoothed,
         topHazard: top,
         status: message.inferenceMs > 900 ? 'degraded' : 'running',
         fps: Math.round(fps * 10) / 10,
@@ -155,6 +179,7 @@ export function useHazardDetection(
       workerRef.current = null;
       lastEventRef.current = null;
       frameTimestampsRef.current = [];
+      trackerRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, tick]);

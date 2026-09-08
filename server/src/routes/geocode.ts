@@ -32,6 +32,9 @@ export interface PlaceInfo {
   city?: string;
   suburb?: string;
   state?: string;
+  /** Nominatim jsonv2 top-level fields used to infer indoors vs outdoors. */
+  name?: string;
+  addresstype?: string;
 }
 
 const cache = new Map<string, { at: number; info: PlaceInfo }>();
@@ -95,11 +98,15 @@ export async function nominatimProvider(lat: number, lng: number): Promise<Place
   if (!res.ok) return { display: '' };
   const body = (await res.json()) as {
     display_name?: string;
+    name?: string;
+    addresstype?: string;
     address?: Record<string, string>;
   };
   const a = body.address ?? {};
   return {
     display: body.display_name?.slice(0, 200) ?? '',
+    name: body.name,
+    addresstype: body.addresstype,
     road: a.road ?? a.pedestrian ?? a.footway,
     suburb: a.suburb ?? a.neighbourhood ?? a.city_district,
     city: a.city ?? a.town ?? a.village ?? a.county,

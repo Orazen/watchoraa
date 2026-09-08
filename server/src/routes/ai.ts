@@ -3,10 +3,9 @@ import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { env } from '../env.js';
 import { asyncHandler } from '../lib/asyncHandler.js';
-import { safeFetch } from '../lib/safe-url.js';
 import { requireAuth } from '../lib/auth.js';
 import { prisma } from '../lib/prisma.js';
-import { getAiProvider, AiProviderError, type AiMode } from '../services/ai/ai-provider.js';
+import { AiProviderError, buildProvider, resolveAiConfig, type AiMode } from '../services/ai/ai-provider.js';
 import { buildPrompt, buildPromptWithOverride } from '../services/ai/prompt-builder.js';
 import { rememberSummary, recentSummaries, newestSummaryAgeSeconds } from '../lib/scene-memory.js';
 
@@ -111,6 +110,7 @@ const intentSchema = z.object({
 // ever exposed to the frontend. Exported for tests that enforce the allow-list.
 export const SAFE_AI_INTENTS = [
   'describe_scene',
+  'describe_surroundings',
   'read_text',
   'start_navigation',
   'start_safe_journey',
@@ -144,42 +144,22 @@ aiRouter.post(
       response.status(400).json({ error: 'Invalid request', details: parsed.error.flatten() });
       return;
     }
-    if (!env.GEMINI_API_KEY) {
-      // No AI configured: deterministic router alone is enough for safety commands.
-      response.json({ intent: 'unknown', parameters: {}, confidence: 0, requiresConfirmation: false });
-      return;
-    }
+    // Any configured provider (the user's own key first, then the server-wide
+    // Gemini key) can parse intent via completeJson; with no AI configured the
+    // demo provider returns the safe "unknown" fallback, so the deterministic
+    // router alone remains authoritative for safety commands.
+    const fallback = { intent: 'unknown', parameters: {}, confidence: 0, requiresConfirmation: false };
     try {
+      const pref = await prisma.aiProviderPref.findUnique({ where: { userId: request.userId! } });
+      const config = resolveAiConfig(pref, env.GEMINI_API_KEY, env.GEMINI_MODEL);
+      const provider = buildProvider(config);
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 8000);
-      const res = await safeFetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${env.GEMINI_MODEL}:generateContent?key=${env.GEMINI_API_KEY}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ role: 'user', parts: [{ text: `${INTENT_PROMPT}\n\nUser command: "${parsed.data.transcript}"` }] }],
-            generationConfig: { responseMimeType: 'application/json', temperature: 0.1 },
-          }),
-          signal: controller.signal,
-        },
-      );
+      const obj = await provider.completeJson(`${INTENT_PROMPT}\n\nUser command: "${parsed.data.transcript}"`, controller.signal);
       clearTimeout(timer);
-      if (!res.ok) {
-        response.json({ intent: 'unknown', parameters: {}, confidence: 0, requiresConfirmation: false });
-        return;
-      }
-      const payload = (await res.json()) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
-      const text = payload.candidates?.[0]?.content?.parts?.[0]?.text;
-      let obj: Record<string, unknown> = {};
-      try {
-        obj = text ? (JSON.parse(text.replace(/```json|```/g, '').trim()) as Record<string, unknown>) : {};
-      } catch {
-        obj = {};
-      }
       const intent = String(obj.intent ?? 'unknown');
       if (!SAFE_AI_INTENTS.includes(intent)) {
-        response.json({ intent: 'unknown', parameters: {}, confidence: 0, requiresConfirmation: false });
+        response.json(fallback);
         return;
       }
       response.json({
@@ -189,7 +169,7 @@ aiRouter.post(
         requiresConfirmation: obj.requiresConfirmation === true,
       });
     } catch {
-      response.json({ intent: 'unknown', parameters: {}, confidence: 0, requiresConfirmation: false });
+      response.json(fallback);
     }
   }),
 );
@@ -266,8 +246,20 @@ aiRouter.post(
       throw error;
     }
 
-    const forceDemo = demo === true || !env.GEMINI_API_KEY;
-    const provider = forceDemo ? getAiProvider(undefined, env.GEMINI_MODEL) : getAiProvider(env.GEMINI_API_KEY, env.GEMINI_MODEL);
+    // Provider resolution: the user's own AI provider settings (bring-your-own
+    // key) win over the server-wide Gemini key; demo mode applies only when
+    // neither exists or the caller explicitly asked for demo.
+    let config: Awaited<ReturnType<typeof resolveAiConfig>> = { source: 'demo' };
+    if (demo !== true) {
+      try {
+        const pref = await prisma.aiProviderPref.findUnique({ where: { userId: request.userId! } });
+        config = resolveAiConfig(pref, env.GEMINI_API_KEY, env.GEMINI_MODEL);
+      } catch {
+        config = env.GEMINI_API_KEY ? { source: 'server', provider: 'GEMINI', apiKey: env.GEMINI_API_KEY, model: env.GEMINI_MODEL } : { source: 'demo' };
+      }
+    }
+    const provider = buildProvider(config);
+    const isDemo = config.source === 'demo';
 
     const controller = new AbortController();
     const onClientDisconnect = () => controller.abort();
@@ -291,8 +283,8 @@ aiRouter.post(
       logAiRequest({
         userId: request.userId,
         mode: mode as AiMode,
-        provider: forceDemo ? 'demo' : 'gemini',
-        model: forceDemo ? 'demo' : env.GEMINI_MODEL,
+        provider: provider.id,
+        model: isDemo ? 'demo' : (config.source === 'demo' ? 'demo' : config.model),
         latencyMs: Date.now() - startedAt,
         success: true,
         redactedInput,
@@ -304,14 +296,14 @@ aiRouter.post(
       // 90s TTL. Follow-up requests consume these as context.
       rememberSummary(request.userId!, result.summary);
 
-      response.json({ ...result, demo: forceDemo });
+      response.json({ ...result, demo: isDemo });
     } catch (error) {
       const errorMessage = error instanceof AiProviderError ? error.message : error instanceof Error ? error.message : 'Unknown error';
       logAiRequest({
         userId: request.userId,
         mode: mode as AiMode,
-        provider: forceDemo ? 'demo' : 'gemini',
-        model: forceDemo ? 'demo' : env.GEMINI_MODEL,
+        provider: provider.id,
+        model: isDemo ? 'demo' : (config.source === 'demo' ? 'demo' : config.model),
         latencyMs: Date.now() - startedAt,
         success: false,
         redactedInput,
