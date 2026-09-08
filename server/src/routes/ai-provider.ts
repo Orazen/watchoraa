@@ -158,10 +158,18 @@ aiProviderRouter.delete(
   '/key',
   asyncHandler(async (request, response) => {
     const existing = await prisma.aiProviderPref.findUnique({ where: { userId: request.userId! } });
+    let updated = existing;
     if (existing) {
-      await prisma.aiProviderPref.update({ where: { userId: request.userId! }, data: { apiKeyEnc: null } });
+      updated = await prisma.aiProviderPref.update({ where: { userId: request.userId! }, data: { apiKeyEnc: null } });
       await recordAudit({ actorId: request.userId, action: 'ai_provider.key_removed', entityType: 'AiProviderPref', entityId: existing.id });
     }
-    response.status(204).send();
+    // 200 + JSON (not 204): the client destructures { ok, providerSettings } and
+    // needs the post-removal state to refresh its UI.
+    response.json({
+      ok: true,
+      providerSettings: updated
+        ? serialize(updated)
+        : { provider: 'GEMINI', model: null, baseUrl: null, hasKey: false, maskedKey: null },
+    });
   }),
 );

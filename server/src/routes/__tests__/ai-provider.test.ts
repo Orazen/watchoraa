@@ -87,9 +87,12 @@ describe('PUT /api/ai-provider', () => {
     expect(response.status).toBe(400);
   });
 
-  it('removes the key', async () => {
+  it('removes the key and returns the post-removal settings', async () => {
     const del = await authed('delete', '/api/ai-provider/key');
-    expect(del.status).toBe(204);
+    expect(del.status).toBe(200);
+    expect(del.body.ok).toBe(true);
+    expect(del.body.providerSettings.hasKey).toBe(false);
+    expect(del.body.providerSettings.maskedKey).toBeNull();
     const get = await authed('get', '/api/ai-provider');
     expect(get.body.providerSettings.hasKey).toBe(false);
     expect(get.body.providerSettings.maskedKey).toBeNull();
