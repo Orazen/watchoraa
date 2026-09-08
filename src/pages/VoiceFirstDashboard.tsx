@@ -1,7 +1,7 @@
 // Voice-first dashboard (v0.4): current status at top, large primary action
 // cards, a persistent voice button, and the emergency control always in reach.
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { PrimaryActionCard, StatusBanner } from '../components/PrimaryActionCard';
 import { EmergencyControl, type EmergencyStatus } from '../components/EmergencyControl';
 import { PermissionStatusCard } from '../permissions/PermissionStatusCard';
@@ -29,19 +29,60 @@ function orbStateFor(voice: VoiceState, hazardActive: boolean, offline: boolean)
 }
 
 /** Live Location card: continuous GPS watch with map, accuracy ring, and a
- *  screen-reader-friendly accuracy summary. Runs only while Home is open. */
-function LiveLocationCard({ onOpenJourney }: { onOpenJourney: () => void }) {
-  const [pos, setPos] = useState<{ lat: number; lng: number; accuracy: number } | null>(null);
+ *  screen-reader-friendly accuracy summary. When GPS is denied or absent the
+ *  card falls back to an approximate city-level network fix so the Home map is
+ *  never empty; the approximation is always disclosed out loud and in text. */
+function LiveLocationCard({
+  onOpenJourney,
+  permissionService,
+  places = [],
+  speak,
+}: {
+  onOpenJourney: () => void;
+  permissionService: PermissionService;
+  places?: Array<{ id: string; label: string; latitude: number | null; longitude: number | null }>;
+  speak: (text: string, priority?: number, dedupeKey?: string) => void;
+}) {
+  const [pos, setPos] = useState<{ lat: number; lng: number; accuracy: number | null } | null>(null);
+  const [approximate, setApproximate] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const ipFallbackTriedRef = useRef(false);
 
   useEffect(() => {
     if (!('geolocation' in navigator)) {
       setError('This device does not support location services.');
-      return;
     }
+  }, []);
+
+  // One-shot network fallback: runs when GPS produces no fix (denied, timed
+  // out, or unsupported). Marks the permission centre with an honest
+  // "approximate — city level" state instead of leaving it "not allowed".
+  useEffect(() => {
+    if (pos || ipFallbackTriedRef.current) return;
+    const t = setTimeout(() => {
+      if (ipFallbackTriedRef.current) return;
+      ipFallbackTriedRef.current = true;
+      void import('../permissions/autoDetect').then((m) =>
+        m.autoDetectLocation({
+          permissionService,
+          onLocation: (loc) => {
+            setError(null);
+            setApproximate(!loc.precise);
+            setPos({ lat: loc.lat, lng: loc.lng, accuracy: loc.accuracy });
+          },
+          onStatus: (message) => speak(message, 4, 'ip-location'),
+        }),
+      );
+    }, 7000);
+    return () => clearTimeout(t);
+  }, [pos, permissionService, speak]);
+
+  useEffect(() => {
+    if (!('geolocation' in navigator)) return;
     const watchId = navigator.geolocation.watchPosition(
       (p) => {
         setError(null);
+        setApproximate(false);
         setPos({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: Math.round(p.coords.accuracy) });
       },
       (err) => setError(err.message || 'Location unavailable.'),
@@ -50,8 +91,29 @@ function LiveLocationCard({ onOpenJourney }: { onOpenJourney: () => void }) {
     return () => navigator.geolocation.clearWatch(watchId);
   }, []);
 
+  const enablePreciseLocation = () => {
+    if (!('geolocation' in navigator)) {
+      speak('This device does not support precise location.', 4, 'precise-unsupported');
+      return;
+    }
+    speak('Requesting precise location.', 4, 'precise-requesting');
+    navigator.geolocation.getCurrentPosition(
+      (p) => {
+        setApproximate(false);
+        setError(null);
+        setPos({ lat: p.coords.latitude, lng: p.coords.longitude, accuracy: Math.round(p.coords.accuracy) });
+        permissionService.set('location', 'allowed', `Accuracy approximately ${Math.round(p.coords.accuracy)} metres.`);
+        speak(`Precise location enabled. Accuracy about ${Math.round(p.coords.accuracy)} metres.`, 4, 'precise-ok');
+      },
+      (err) => {
+        speak(`Precise location is still unavailable. ${err.message || 'Permission was not granted.'}`, 4, 'precise-fail');
+      },
+      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 0 },
+    );
+  };
+
   const quality =
-    pos == null
+    pos == null || pos.accuracy == null
       ? null
       : pos.accuracy <= 10
         ? { label: 'Excellent', tone: 'ok' }
@@ -61,27 +123,47 @@ function LiveLocationCard({ onOpenJourney }: { onOpenJourney: () => void }) {
             ? { label: 'Fair', tone: 'warn' }
             : { label: 'Poor', tone: 'warn' };
 
+  const markers = places
+    .filter((p) => p.latitude != null && p.longitude != null)
+    .map((p) => ({ lat: p.latitude as number, lng: p.longitude as number, label: p.label }));
+
+  const summary = approximate
+    ? 'Approximate location — city-level fix from your network. Enable precise location for turn-by-turn accuracy.'
+    : error
+      ? `Location unavailable: ${error}`
+      : pos
+        ? `Latitude ${pos.lat.toFixed(5)}, longitude ${pos.lng.toFixed(5)}.${pos.accuracy != null ? ` Accuracy ${pos.accuracy} metres — ${quality?.label ?? 'unknown'}.` : ''}`
+        : 'Finding your position…';
+
   return (
     <div className="status-card live-location-card" role="region" aria-label="Live location">
       <div className="status-card-head">
         <span className="status-icon" aria-hidden="true">📍</span>
         <div>
           <h3>Live location</h3>
-          <p className="status-line" aria-live="polite">
-            {error
-              ? `Location unavailable: ${error}`
-              : pos
-                ? `Latitude ${pos.lat.toFixed(5)}, longitude ${pos.lng.toFixed(5)}. Accuracy ${pos.accuracy} metres — ${quality?.label ?? 'unknown'}.`
-                : 'Finding your position…'}
-          </p>
+          <p className="status-line" aria-live="polite">{summary}</p>
         </div>
       </div>
-      {pos && (
-        <MapView userLat={pos.lat} userLng={pos.lng} accuracyMeters={pos.accuracy} height="240px" zoom={17} showCompass={false} />
-      )}
-      <button className="ghost-btn" style={{ marginTop: 10 }} onClick={onOpenJourney}>
-        Start a monitored Safe Journey with this location
-      </button>
+      {/* The map is always visible on Home — even before any fix arrives. */}
+      <MapView
+        userLat={pos?.lat ?? null}
+        userLng={pos?.lng ?? null}
+        accuracyMeters={approximate ? undefined : pos?.accuracy ?? undefined}
+        markers={markers}
+        height="240px"
+        zoom={17}
+        showCompass={false}
+      />
+      <div className="control-inline" style={{ marginTop: 10 }}>
+        {approximate && (
+          <button className="ghost-btn" onClick={enablePreciseLocation}>
+            Enable precise location
+          </button>
+        )}
+        <button className="ghost-btn" onClick={onOpenJourney}>
+          Start a monitored Safe Journey with this location
+        </button>
+      </div>
     </div>
   );
 }
@@ -93,6 +175,7 @@ export function VoiceFirstDashboard({
   offline,
   voiceState,
   hazardActive = false,
+  places = [],
   onOrbToggle,
   onOpenTab,
   onOpenPermissions,
@@ -109,6 +192,8 @@ export function VoiceFirstDashboard({
   voiceState?: VoiceState;
   /** True while hazard/emergency speech is active — turns the orb red. */
   hazardActive?: boolean;
+  /** Saved places pinned on the Home map. */
+  places?: Array<{ id: string; label: string; latitude: number | null; longitude: number | null }>;
   onOrbToggle?: () => void;
   onOpenTab: (tab: DashboardTab) => void;
   onOpenPermissions: () => void;
@@ -171,7 +256,12 @@ export function VoiceFirstDashboard({
         <PermissionStatusCard service={permissionService} onOpen={onOpenPermissions} />
       </section>
 
-      <LiveLocationCard onOpenJourney={() => onOpenTab('journey')} />
+      <LiveLocationCard
+        onOpenJourney={() => onOpenTab('journey')}
+        permissionService={permissionService}
+        places={places}
+        speak={speak}
+      />
 
       <section className="primary-cards">
         <PrimaryActionCard

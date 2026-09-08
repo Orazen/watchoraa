@@ -51,6 +51,12 @@ export interface VoiceIntent {
   requiresConfirmation: boolean;
   /** True when matched by the deterministic router (not AI). */
   deterministic: boolean;
+  /**
+   * Compound command ("open settings and save this place as home"): the
+   * server-validated remaining commands to execute after the primary one.
+   * Each entry already passed the server-side allow-list.
+   */
+  commands?: VoiceIntent[];
 }
 
 /** Intents that must never be executed without explicit confirmation. */

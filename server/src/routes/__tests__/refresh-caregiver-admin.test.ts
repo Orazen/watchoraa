@@ -279,3 +279,85 @@ describe("GET /api/caregiver/location/:userId (consent-gated map)", () => {
     expect(response.status).toBe(403);
   });
 });
+
+describe("/api/caregiver/ward-settings/:userId (remote config)", () => {
+  it("returns 403 while the pairing exists but canManageSettings is not granted", async () => {
+    const { prisma } = await import("../../lib/prisma.js");
+    await prisma.trustedContact.create({
+      data: { userId: blindId, name: "Caregiver User", email: caregiverEmail, canReceiveAlerts: true, canManageSettings: false },
+    });
+
+    const view = await request(app)
+      .get(`/api/caregiver/ward-settings/${blindId}`)
+      .set("Authorization", `Bearer ${caregiverToken}`);
+    expect(view.status).toBe(403);
+
+    const save = await request(app)
+      .put(`/api/caregiver/ward-settings/${blindId}`)
+      .set("Authorization", `Bearer ${caregiverToken}`)
+      .send({ speechRate: 1.2 });
+    expect(save.status).toBe(403);
+  });
+
+  it("lets a granted caregiver read and change the ward's accessibility prefs — never the AI key", async () => {
+    const { prisma } = await import("../../lib/prisma.js");
+    const contact = await prisma.trustedContact.findFirst({
+      where: { userId: blindId, email: { equals: caregiverEmail, mode: "insensitive" } },
+    });
+    await prisma.trustedContact.update({ where: { id: contact!.id }, data: { canManageSettings: true } });
+
+    const view = await request(app)
+      .get(`/api/caregiver/ward-settings/${blindId}`)
+      .set("Authorization", `Bearer ${caregiverToken}`);
+    expect(view.status).toBe(200);
+    expect(view.body.ward.id).toBe(blindId);
+    expect(view.body.ward.fullName).toBe("Blind User");
+    expect(typeof view.body.aiProvider.hasKey).toBe("boolean");
+    // The API key material must never appear in the response.
+    expect(JSON.stringify(view.body)).not.toContain("apiKey");
+
+    const save = await request(app)
+      .put(`/api/caregiver/ward-settings/${blindId}`)
+      .set("Authorization", `Bearer ${caregiverToken}`)
+      .send({ speechRate: 1.4, audioEnabled: false });
+    expect(save.status).toBe(200);
+    expect(save.body.preferences.speechRate).toBe(1.4);
+    expect(save.body.preferences.audioEnabled).toBe(false);
+    expect(save.body.ward.id).toBe(blindId);
+
+    const verify = await request(app)
+      .get(`/api/caregiver/ward-settings/${blindId}`)
+      .set("Authorization", `Bearer ${caregiverToken}`);
+    expect(verify.body.preferences.speechRate).toBe(1.4);
+
+    // Revoke consent from the ward side: every caregiver request fails again.
+    await prisma.trustedContact.update({ where: { id: contact!.id }, data: { canManageSettings: false } });
+    const revoked = await request(app)
+      .get(`/api/caregiver/ward-settings/${blindId}`)
+      .set("Authorization", `Bearer ${caregiverToken}`);
+    expect(revoked.status).toBe(403);
+
+    await prisma.trustedContact.delete({ where: { id: contact!.id } });
+  });
+
+  it("rejects an empty or invalid preference payload", async () => {
+    const response = await request(app)
+      .put(`/api/caregiver/ward-settings/${blindId}`)
+      .set("Authorization", `Bearer ${caregiverToken}`)
+      .send({ speechRate: 99 });
+    expect(response.status).toBe(400);
+
+    const empty = await request(app)
+      .put(`/api/caregiver/ward-settings/${blindId}`)
+      .set("Authorization", `Bearer ${caregiverToken}`)
+      .send({});
+    expect(empty.status).toBe(400);
+  });
+
+  it("blocks blind users from the caregiver remote-config endpoints", async () => {
+    const view = await request(app)
+      .get(`/api/caregiver/ward-settings/${blindId}`)
+      .set("Authorization", `Bearer ${blindToken}`);
+    expect(view.status).toBe(403);
+  });
+});

@@ -115,3 +115,89 @@ export async function nominatimProvider(lat: number, lng: number): Promise<Place
 }
 
 export const geocodeRouter: Router = makeGeocodeRouter();
+
+// ---- IP-based approximate location ---------------------------------------
+// Fallback for when the browser's GPS permission is denied/unavailable: the
+// Home map and "where am I" still show a city-level position derived from the
+// caller's public IP. Trust proxy = 1 (app.ts) makes req.ip the real client.
+const ipCache = new Map<string, { at: number; body: IpLocation }>();
+const IP_CACHE_TTL_MS = 30 * 60 * 1000; // IPs move rarely; city-level anyway
+const IP_CACHE_MAX = 500;
+
+export interface IpLocation {
+  lat: number;
+  lng: number;
+  approximate: true;
+  city?: string;
+  country?: string;
+}
+
+async function ipWhoIsLookup(ip: string): Promise<IpLocation> {
+  const url = `https://ipwho.is/${encodeURIComponent(ip)}`;
+  const res = await safeFetch(url, {
+    headers: { 'User-Agent': NOMINATIM_UA },
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!res.ok) throw new Error('ip lookup failed');
+  const body = (await res.json()) as {
+    success?: boolean;
+    latitude?: number;
+    longitude?: number;
+    city?: string;
+    country?: string;
+  };
+  if (body.success === false || typeof body.latitude !== 'number' || typeof body.longitude !== 'number') {
+    throw new Error('ip lookup unavailable');
+  }
+  return {
+    lat: body.latitude,
+    lng: body.longitude,
+    approximate: true,
+    city: body.city,
+    country: body.country,
+  };
+}
+
+export function makeIpLocationRouter(provider: (ip: string) => Promise<IpLocation> = ipWhoIsLookup): Router {
+  const router = Router();
+  router.use(requireAuth);
+
+  router.get(
+    '/ip',
+    lookupLimiter,
+    asyncHandler(async (request, response) => {
+      const ip = request.ip ?? '';
+      // Private/loopback addresses (local dev, health checks) have no public
+      // geolocation — fail cleanly rather than returning a datacenter answer.
+      if (!ip || ip.startsWith('127.') || ip.startsWith('10.') || ip.startsWith('192.168.') || ip.startsWith('::1') || ip.includes('172.16.') || ip === '::ffff:127.0.0.1') {
+        response.status(404).json({ error: 'No public IP available for this connection.' });
+        return;
+      }
+
+      const cached = ipCache.get(ip);
+      if (cached && Date.now() - cached.at < IP_CACHE_TTL_MS) {
+        response.json({ ...cached.body, cached: true });
+        return;
+      }
+
+      let info: IpLocation;
+      try {
+        info = await provider(ip);
+      } catch {
+        response.status(502).json({ error: 'Approximate location is not reachable right now.' });
+        return;
+      }
+
+      ipCache.set(ip, { at: Date.now(), body: info });
+      if (ipCache.size > IP_CACHE_MAX) {
+        const oldest = ipCache.keys().next().value;
+        if (oldest) ipCache.delete(oldest);
+      }
+      response.json({ ...info, cached: false });
+    }),
+  );
+
+  return router;
+}
+
+export const ipLocationRouter: Router = makeIpLocationRouter();

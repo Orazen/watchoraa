@@ -18,6 +18,7 @@ import { ConfirmationManager } from './confirmationManager';
 import { DEFAULT_VOICE_SETTINGS, isHandsFree, HANDS_FREE_ONBOARDING, MIC_PERMISSION_REQUEST, type VoiceIntent, type VoiceSettings } from './voiceTypes';
 import { loadVoiceSettings, saveVoiceSettings } from './voiceSettingsStorage';
 import { decideHandsFreeAction } from './handsFreeSession';
+import { setRecentCommandContext } from './aiIntentParser';
 
 export type VoiceState =
   | 'idle'
@@ -267,6 +268,30 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
         setState('idle');
         return;
       }
+
+      // Compound commands ("open settings and save this place as home"): the
+      // server returned a validated list; `commands` holds the remaining
+      // entries after the primary. Execute in spoken order. If a later entry
+      // is confirmation-gated, run it (its own confirmation flow starts) and
+      // drop the rest — never auto-run actions after a pending confirmation.
+      const rest = intent.commands ?? [];
+      if (rest.length > 0) {
+        for (const sub of rest) {
+          if (sub.intent === 'unknown') continue;
+          onCommandRef.current(sub);
+          if (sub.requiresConfirmation) break;
+        }
+      }
+
+      // Ephemeral recent-command context so pronoun follow-ups ("take me
+      // there again") resolve against what just happened. Kept short.
+      const paramSummary = intent.parameters.destination
+        ? `navigating to "${intent.parameters.destination}"`
+        : Object.keys(intent.parameters).length > 0
+          ? `${intent.intent} ${JSON.stringify(intent.parameters).slice(0, 120)}`
+          : intent.intent;
+      setRecentCommandContext(paramSummary);
+
       onCommandRef.current(intent);
       setState('idle');
     },

@@ -85,6 +85,33 @@ export class PermissionService {
     };
     // Seed non-interactive states immediately.
     this.refreshStatic();
+    // Battery Status API needs no user prompt in supporting browsers — probe
+    // it silently at construction so the Permission Centre shows "active"
+    // without the user hunting for a button (and without any 'requesting'
+    // dance that would imply a prompt happened).
+    void this.probeBatterySilently();
+  }
+
+  /** Silent battery probe: no 'requesting' state, no prompt, updates detail. */
+  private async probeBatterySilently(): Promise<void> {
+    const nav = this.browser.navigator as Navigator & { getBattery?: () => Promise<{ level: number }> };
+    if (!nav.getBattery) {
+      // Leave 'not-requested' → Permission Centre explains it needs Enable.
+      // Actually the API is simply absent: mark unsupported right away.
+      this.set('battery', 'browser-unsupported', 'This browser does not expose the Battery Status API.');
+      return;
+    }
+    try {
+      const battery = await nav.getBattery();
+      if (typeof battery.level === 'number') {
+        this.set('battery', 'allowed', `Level approximately ${Math.round(battery.level * 100)} percent.`);
+      } else {
+        this.set('battery', 'temporarily-unavailable');
+      }
+    } catch {
+      // Some browsers throw without a user gesture; keep 'not-requested' so
+      // the Enable button remains available for the gesture-driven request.
+    }
   }
 
   private make(key: PermissionKey): PermissionInfo {

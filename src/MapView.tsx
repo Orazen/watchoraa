@@ -11,6 +11,8 @@ export interface MapViewProps {
   showScale?: boolean;
   /** GPS accuracy radius in meters — renders a translucent ring around the user. */
   accuracyMeters?: number | null;
+  /** Saved places shown as labelled pins (Home map). */
+  markers?: Array<{ lat: number; lng: number; label: string }>;
 }
 
 export function MapView({
@@ -23,10 +25,12 @@ export function MapView({
   showCompass = true,
   showScale = true,
   accuracyMeters = null,
+  markers = [],
 }: MapViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<any>(null);
   const markerRef = useRef<any>(null);
+  const placeMarkersRef = useRef<any[]>([]);
   const mlRef = useRef<{ Marker: any } | null>(null);
   const [mapError, setMapError] = useState<string | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
@@ -127,6 +131,8 @@ export function MapView({
         markerRef.current.remove();
         markerRef.current = null;
       }
+      for (const m of placeMarkersRef.current) m.remove();
+      placeMarkersRef.current = [];
       if (mapRef.current) {
         mapRef.current.remove();
         mapRef.current = null;
@@ -176,6 +182,24 @@ export function MapView({
       features: [{ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [points] } }],
     });
   }, [userLat, userLng, accuracyMeters, mapLoaded]);
+
+  // Saved-place pins: rebuilt whenever the markers prop changes.
+  useEffect(() => {
+    const map = mapRef.current;
+    const M = mlRef.current?.Marker;
+    if (!map || !M) return;
+    for (const m of placeMarkersRef.current) m.remove();
+    placeMarkersRef.current = markers.map(({ lat, lng, label }) => {
+      const el = document.createElement('div');
+      el.className = 'mapview-place-marker';
+      el.setAttribute('role', 'img');
+      el.setAttribute('aria-label', `Saved place: ${label}`);
+      el.innerHTML = `<div class="place-pin" aria-hidden="true"></div><div class="place-label" aria-hidden="true"></div>`;
+      const labelEl = el.querySelector('.place-label') as HTMLElement | null;
+      if (labelEl) labelEl.textContent = label;
+      return new M({ element: el, anchor: 'bottom' }).setLngLat([lng, lat]).addTo(map);
+    });
+  }, [markers, mapLoaded]);
 
   function placeMarker(map: any, lng: number, lat: number) {
     const M = mlRef.current?.Marker;

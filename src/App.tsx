@@ -20,6 +20,8 @@ import type {
   SavedPlace,
   TrustedContact,
   TtsVoice,
+  WardPreferencesPatch,
+  WardSettings,
 } from './api';
 import { useHazardDetection } from './useHazardDetection';
 import { summarizeEnvironment, describeEnvironment, detectionGroundingPrompt, type PlaceContext } from './environment';
@@ -1939,6 +1941,7 @@ function MainApp({
                   offline={!navigator.onLine}
                   voiceState={voiceAssistant.state}
                   hazardActive={hazardActive || hazardState.topHazard != null && hazardState.topHazard.className === 'person'}
+                  places={places ?? []}
                   onOrbToggle={() => voiceAssistant.toggleListening()}
                   onOpenTab={(t) => setActiveTab(t as TabKey)}
                   onOpenPermissions={() => setShowPermissions(true)}
@@ -2296,10 +2299,12 @@ function SosTab({
 }) {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
   const [relationship, setRelationship] = useState('');
   const [sosMessage, setSosMessage] = useState('I need help. Please check on me.');
   const [sending, setSending] = useState(false);
   const [shareLocOnAdd, setShareLocOnAdd] = useState(false);
+  const [manageOnAdd, setManageOnAdd] = useState(false);
   // Apple-style SOS: full-screen takeover with a spoken countdown, then an
   // automatic deterministic emergency session. window.confirm is unusable
   // non-visually; the countdown IS the confirmation.
@@ -2415,15 +2420,24 @@ function SosTab({
       const { contact } = await api.createContact({
         name: name.trim(),
         phone: phone.trim() || undefined,
+        email: email.trim() || undefined,
         relationship: relationship.trim() || undefined,
         canSeeLocation: shareLocOnAdd,
+        canManageSettings: manageOnAdd,
       });
       onContactCreated(contact);
       setName('');
       setPhone('');
+      setEmail('');
       setRelationship('');
       setShareLocOnAdd(false);
-      announce('Contact added.', 'online');
+      setManageOnAdd(false);
+      announce(
+        manageOnAdd
+          ? 'Contact added. Once they create a Watchora account with this email, they can adjust your settings remotely.'
+          : 'Contact added.',
+        'online',
+      );
     } catch (error) {
       announce(error instanceof ApiError ? error.message : 'Could not add this contact.', 'error');
     }
@@ -2450,6 +2464,28 @@ function SosTab({
       );
     } catch (error) {
       announce(error instanceof ApiError ? error.message : 'Could not update location sharing.', 'error');
+    }
+  }
+
+  async function toggleManageConsent(contact: TrustedContact) {
+    try {
+      const { contact: updated } = await api.updateContact(contact.id, { canManageSettings: !contact.canManageSettings });
+      onContactCreated(updated); // same shape; replace in list
+      speak(
+        updated.canManageSettings
+          ? `${contact.name} can now manage your Watchora settings from their own account. They will never see or change your AI key.`
+          : `Remote settings management for ${contact.name} is off.`,
+        4,
+        `manage-consent-${contact.id}`,
+      );
+      announce(
+        updated.canManageSettings
+          ? `${contact.name} can now manage your settings remotely.`
+          : `Remote settings management for ${contact.name} is off.`,
+        'online',
+      );
+    } catch (error) {
+      announce(error instanceof ApiError ? error.message : 'Could not update remote management.', 'error');
     }
   }
 
@@ -2542,6 +2578,16 @@ function SosTab({
                 >
                   {contact.canSeeLocation ? <><span aria-hidden="true">📍</span> Location on</> : <><span aria-hidden="true">📍</span> Location off</>}
                 </button>
+                {contact.email && (
+                  <button
+                    className="ghost-btn"
+                    aria-pressed={contact.canManageSettings}
+                    onClick={() => toggleManageConsent(contact)}
+                    title="Let this contact adjust your settings from their own Watchora account"
+                  >
+                    {contact.canManageSettings ? <><span aria-hidden="true">🛠️</span> Remote care on</> : <><span aria-hidden="true">🛠️</span> Remote care off</>}
+                  </button>
+                )}
                 <button className="ghost-btn" onClick={() => removeContact(contact.id)}>
                   Remove
                 </button>
@@ -2561,12 +2607,33 @@ function SosTab({
               <span>Phone (optional)</span>
               <input aria-label="Phone (optional)" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="Phone number" />
             </label>
+            <label>
+              <span>Email (needed for remote care linking)</span>
+              <input
+                aria-label="Email (needed for remote care linking)"
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="their@email.com"
+              />
+            </label>
             <label className="settings-row">
               <span>Share live location with this contact</span>
               <button className="ghost-btn" aria-pressed={shareLocOnAdd} onClick={() => setShareLocOnAdd(!shareLocOnAdd)}>
                 {shareLocOnAdd ? 'On' : 'Off'}
               </button>
             </label>
+            <label className="settings-row">
+              <span>Let this contact manage my settings</span>
+              <button className="ghost-btn" aria-pressed={manageOnAdd} onClick={() => setManageOnAdd(!manageOnAdd)}>
+                {manageOnAdd ? 'On' : 'Off'}
+              </button>
+            </label>
+            <p className="soft-note">
+              Remote care: once this contact signs up with the same email, they can adjust your speech, display, and
+              connectivity settings from their own Watchora account — nothing else. Your AI key is never visible to
+              them, every change is logged, and you can turn this off at any time.
+            </p>
             <button className="secondary-btn" onClick={addContact}>
               ＋ Add contact
             </button>
@@ -2724,6 +2791,7 @@ function CaregiverTab({ announce }: { announce: (message: string, tone?: Tone) =
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
   const [locData, setLocData] = useState<Record<string, CaregiverLiveLocation | null>>({});
   const [locLoading, setLocLoading] = useState(false);
+  const [settingsUserId, setSettingsUserId] = useState<string | null>(null);
 
   useEffect(() => {
     api
@@ -2791,10 +2859,24 @@ function CaregiverTab({ announce }: { announce: (message: string, tone?: Tone) =
                       <p className="settings-list-title">{u.fullName}</p>
                       <p className="settings-list-sub">{u.email}</p>
                     </div>
-                    <button className="ghost-btn" onClick={() => toggleLocation(u.id)} aria-expanded={expanded}>
-                      {expanded ? 'Hide location' : <><span aria-hidden="true">📍</span> Live location</>}
-                    </button>
+                    <div className="control-inline" style={{ gap: 8 }}>
+                      <button className="ghost-btn" onClick={() => toggleLocation(u.id)} aria-expanded={expanded}>
+                        {expanded ? 'Hide location' : <><span aria-hidden="true">📍</span> Live location</>}
+                      </button>
+                      <button
+                        className="ghost-btn"
+                        onClick={() => setSettingsUserId(settingsUserId === u.id ? null : u.id)}
+                        aria-expanded={settingsUserId === u.id}
+                      >
+                        {settingsUserId === u.id ? 'Close settings' : <><span aria-hidden="true">🛠️</span> Adjust settings</>}
+                      </button>
+                    </div>
                   </div>
+                  {settingsUserId === u.id && (
+                    <div style={{ marginTop: 12 }}>
+                      <WardSettingsPanel userId={u.id} wardName={u.fullName} announce={announce} />
+                    </div>
+                  )}
                   {expanded && (
                     <div style={{ marginTop: 12 }}>
                       {locLoading ? (
@@ -2873,6 +2955,145 @@ function CaregiverTab({ announce }: { announce: (message: string, tone?: Tone) =
           </ul>
         )}
       </section>
+    </div>
+  );
+}
+
+/** Remote-config panel: a caregiver adjusts the linked ward's accessibility
+ *  settings from their own account. Scope is deliberately narrow — only the
+ *  same accessibility fields the ward can change themselves; the AI key is
+ *  surfaced read-only as hasKey and can never be read or replaced here. Every
+ *  view and save is audit-logged server-side and the ward can revoke consent
+ *  at any time from their contacts list. */
+function WardSettingsPanel({ userId, wardName, announce }: { userId: string; wardName: string; announce: (message: string, tone?: Tone) => void }) {
+  const [settings, setSettings] = useState<WardSettings | null>(null);
+  const [loadError, setLoadError] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [savedAt, setSavedAt] = useState<string | null>(null);
+  const [draft, setDraft] = useState<WardPreferencesPatch>({});
+
+  useEffect(() => {
+    api
+      .caregiverWardPreferences(userId)
+      .then((s) => {
+        setSettings(s);
+        setDraft(s.preferences ? {
+          speechRate: s.preferences.speechRate,
+          voiceName: s.preferences.voiceName ?? undefined,
+          instructionDetail: s.preferences.instructionDetail,
+          vibrationEnabled: s.preferences.vibrationEnabled,
+          audioEnabled: s.preferences.audioEnabled,
+          reducedMotion: s.preferences.reducedMotion,
+          textScale: s.preferences.textScale,
+          lowConnectivityMode: s.preferences.lowConnectivityMode,
+          imageRetentionHours: s.preferences.imageRetentionHours,
+        } : {});
+      })
+      .catch(() => setLoadError(true));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
+
+  if (loadError) {
+    return <p className="muted-note">Could not load settings. This user may not have granted you remote-care access.</p>;
+  }
+  if (!settings) {
+    return <p className="muted-note" role="status" aria-live="polite">Loading settings…</p>;
+  }
+
+  async function save() {
+    setSaving(true);
+    try {
+      const res = await api.updateCaregiverWardPreferences(userId, draft);
+      setSettings(res);
+      setSavedAt(new Date().toLocaleTimeString());
+      announce(`Settings for ${wardName} saved.`, 'online');
+    } catch {
+      announce('Could not save settings for this user.', 'error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const d = { ...(settings.preferences ?? {}), ...draft } as Partial<import('./api').AccessibilityPreferences> & WardPreferencesPatch;
+
+  return (
+    <div className="ward-settings-panel" style={{ display: 'grid', gap: 10 }}>
+      <p className="muted-note">
+        Remote care for <strong>{settings.ward.fullName}</strong> · preferred language {settings.ward.preferredLanguage}.
+        Only the settings below can be changed — the AI key is never visible here, every change is logged, and{' '}
+        {settings.ward.fullName.split(' ')[0] ?? 'this user'} can revoke access at any time.
+      </p>
+
+      <div className="control-inline" style={{ flexWrap: 'wrap', gap: 8 }}>
+        <label className="settings-row" style={{ gap: 8 }}>
+          <span>Speech rate {d.speechRate != null && <strong>{Number(d.speechRate).toFixed(2)}x</strong>}</span>
+          <input
+            type="range" min={0.5} max={2} step={0.05}
+            aria-label={`${wardName} speech rate`}
+            value={d.speechRate ?? 1}
+            onChange={(e) => setDraft((p) => ({ ...p, speechRate: Number(e.target.value) }))}
+          />
+        </label>
+        <label className="settings-row" style={{ gap: 8 }}>
+          <span>Instruction detail {d.instructionDetail != null && <strong>{Number(d.instructionDetail)}</strong>}</span>
+          <input
+            type="range" min={1} max={3} step={1}
+            aria-label={`${wardName} instruction detail level`}
+            value={d.instructionDetail ?? 2}
+            onChange={(e) => setDraft((p) => ({ ...p, instructionDetail: Number(e.target.value) }))}
+          />
+        </label>
+        <label className="settings-row" style={{ gap: 8 }}>
+          <span>Text scale {d.textScale != null && <strong>{Number(d.textScale).toFixed(2)}x</strong>}</span>
+          <input
+            type="range" min={1} max={1.6} step={0.05}
+            aria-label={`${wardName} text scale`}
+            value={d.textScale ?? 1}
+            onChange={(e) => setDraft((p) => ({ ...p, textScale: Number(e.target.value) }))}
+          />
+        </label>
+        <label className="settings-row" style={{ gap: 8 }}>
+          <span>Voice</span>
+          <input
+            type="text"
+            aria-label={`${wardName} preferred voice name`}
+            placeholder="Device default"
+            value={d.voiceName ?? ''}
+            onChange={(e) => setDraft((p) => ({ ...p, voiceName: e.target.value || undefined }))}
+          />
+        </label>
+      </div>
+
+      <div className="control-inline" style={{ flexWrap: 'wrap', gap: 8 }}>
+        {([
+          ['audioEnabled', 'Audio descriptions'],
+          ['vibrationEnabled', 'Vibration cues'],
+          ['reducedMotion', 'Reduced motion'],
+          ['lowConnectivityMode', 'Low-connectivity mode'],
+        ] as Array<[keyof WardPreferencesPatch, string]>).map(([key, label]) => (
+          <button
+            key={key}
+            className="ghost-btn"
+            aria-pressed={Boolean(d[key])}
+            onClick={() => setDraft((p) => ({ ...p, [key]: !p[key] }))}
+          >
+            {label}: {d[key] ? 'On' : 'Off'}
+          </button>
+        ))}
+      </div>
+
+      <div className="control-inline" style={{ flexWrap: 'wrap', gap: 8 }}>
+        <button className="primary-btn" onClick={save} disabled={saving}>
+          {saving ? 'Saving…' : 'Save settings'}
+        </button>
+        {savedAt && <span className="pill pill-success" role="status">Saved {savedAt}</span>}
+      </div>
+
+      <p className="muted-note">
+        AI provider (read-only): {settings.aiProvider.provider}
+        {settings.aiProvider.model ? ` · ${settings.aiProvider.model}` : ''} ·{' '}
+        {settings.aiProvider.hasKey ? 'key configured by the user' : 'no AI key yet (free presets available in their AI settings)'}.
+      </p>
     </div>
   );
 }

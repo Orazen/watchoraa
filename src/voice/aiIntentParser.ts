@@ -16,3 +16,16 @@ export class BackendIntentParser implements AiIntentParser {
     }
   }
 }
+
+/**
+ * Recent-command context for pronoun follow-ups ("take me there again").
+ * Sent ephemerally with each parse request — the server uses it only for that
+ * one prompt and never persists it.
+ */
+let recentCommandContext = '';
+export function setRecentCommandContext(summary: string): void {
+  recentCommandContext = summary.slice(0, 1000);
+}
+export function getRecentCommandContext(): string {
+  return recentCommandContext;
+}

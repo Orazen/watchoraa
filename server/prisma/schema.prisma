@@ -140,6 +140,10 @@ model TrustedContact {
   canReceiveAlerts Boolean  @default(false)
   canSeeLocation   Boolean  @default(false)
   canSeeJourneys   Boolean  @default(false)
+  // Caregiver remote-config consent (v0.5): the blind user explicitly allows
+  // this trusted contact (matched by email) to view and change accessibility
+  // settings remotely. Off by default; every change is audit-logged.
+  canManageSettings Boolean @default(false)
   shareExpiresAt   DateTime?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt

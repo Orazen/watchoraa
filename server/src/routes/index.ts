@@ -19,7 +19,7 @@ import { thingsRouter } from './things.js';
 import { ttsRouter } from './tts.js';
 import { safeJourneyRouter } from './safe-journey.js';
 import { emergencyRouter } from './emergency.js';
-import { geocodeRouter } from './geocode.js';
+import { geocodeRouter, ipLocationRouter } from './geocode.js';
 
 export const apiRouter = Router();
 
@@ -36,6 +36,7 @@ apiRouter.use('/preferences', preferencesRouter);
 apiRouter.use('/products', productsRouter);
 apiRouter.use('/things', thingsRouter);
 apiRouter.use('/geocode', geocodeRouter);
+apiRouter.use('/geocode', ipLocationRouter);
 apiRouter.use('/reading-entries', readingEntriesRouter);
 apiRouter.use('/consents', consentsRouter);
 apiRouter.use('/journeys', journeysRouter);

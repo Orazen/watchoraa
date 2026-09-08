@@ -71,3 +71,30 @@ describe('GET /api/geocode-test/reverse', () => {
     expect(res.status).toBe(502);
   });
 });
+
+describe('GET /api/geocode-test/ip (IP fallback)', () => {
+  it('requires auth', async () => {
+    const res = await request(app).get('/api/geocode-test/ip');
+    expect(res.status).toBe(401);
+  });
+
+  // Supertest connections come from loopback, which has no public
+  // geolocation — the endpoint must fail cleanly instead of asking
+  // the upstream provider for a datacenter answer.
+  it('rejects private/loopback caller IPs without calling the provider', async () => {
+    let providerHits = 0;
+    const { makeIpLocationRouter } = await import('../geocode.js');
+    const { apiRouter } = await import('../index.js');
+    apiRouter.use(
+      '/geocode-test',
+      makeIpLocationRouter(async () => {
+        providerHits += 1;
+        return { lat: 1, lng: 2, approximate: true };
+      }),
+    );
+    const res = await request(app).get('/api/geocode-test/ip').set('Authorization', `Bearer ${userToken}`);
+    expect(res.status).toBe(404);
+    expect(res.body.error).toMatch(/No public IP/i);
+    expect(providerHits).toBe(0);
+  });
+});

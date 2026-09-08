@@ -34,6 +34,8 @@ export type TrustedContact = {
   email: string | null;
   canReceiveAlerts: boolean;
   canSeeLocation: boolean;
+  /** Blind user's consent: this contact (matched by email) may view and change accessibility settings remotely. */
+  canManageSettings: boolean;
 };
 
 export type SavedPlace = {
@@ -152,12 +154,27 @@ export type CaregiverLiveLocation = {
 
 export type CaregiverOverview = {
   caregiver: { id: string; email: string; fullName: string };
-  contacts: Array<{ userId: string; name: string; relationship: string | null; canReceiveAlerts: boolean; canSeeLocation: boolean }>;
+  contacts: Array<{ userId: string; name: string; relationship: string | null; canReceiveAlerts: boolean; canSeeLocation: boolean; canManageSettings: boolean }>;
   blindUsers: Array<{ id: string; email: string; fullName: string; preferredLanguage: string }>;
   openAssistance: Array<AssistanceRequest & { user: { fullName: string; email: string } }>;
   recentJourneys: Array<{ id: string; destination: string; mode: string; startedAt: string; user: { fullName: string } }>;
   savedPlaces: Array<SavedPlace & { user: { fullName: string } }>;
 };
+
+/** Accessibility settings of a supported person, as seen by their caregiver. */
+export type WardSettings = {
+  ward: { id: string; fullName: string; preferredLanguage: string };
+  preferences: AccessibilityPreferences | null;
+  aiProvider: { provider: 'GEMINI' | 'OPENAI_COMPATIBLE'; model: string | null; hasKey: boolean };
+};
+
+/** Ward accessibility fields a caregiver may change (same set the ward can). */
+export type WardPreferencesPatch = Partial<
+  Pick<
+    AccessibilityPreferences,
+    'speechRate' | 'voiceName' | 'instructionDetail' | 'vibrationEnabled' | 'audioEnabled' | 'reducedMotion' | 'textScale' | 'lowConnectivityMode' | 'imageRetentionHours'
+  >
+>;
 
 export type PromptVersion = {
   id: string;
@@ -446,6 +463,7 @@ function handleOfflineFallback<T>(path: string, options: RequestInit = {}): T {
       email: body.email || null,
       canReceiveAlerts: Boolean(body.canReceiveAlerts),
       canSeeLocation: Boolean(body.canSeeLocation),
+      canManageSettings: Boolean(body.canManageSettings),
     };
     contacts.push(newContact);
     localStorage.setItem('watchora_demo_contacts', JSON.stringify(contacts));
@@ -659,9 +677,9 @@ export const api = {
     }),
 
   listContacts: () => request<{ contacts: TrustedContact[] }>('/api/contacts'),
-  createContact: (input: { name: string; relationship?: string; phone?: string; email?: string; canReceiveAlerts?: boolean; canSeeLocation?: boolean }) =>
+  createContact: (input: { name: string; relationship?: string; phone?: string; email?: string; canReceiveAlerts?: boolean; canSeeLocation?: boolean; canManageSettings?: boolean }) =>
     request<{ contact: TrustedContact }>('/api/contacts', { method: 'POST', body: JSON.stringify(input) }),
-  updateContact: (id: string, input: { canSeeLocation?: boolean; canReceiveAlerts?: boolean }) =>
+  updateContact: (id: string, input: { canSeeLocation?: boolean; canReceiveAlerts?: boolean; canManageSettings?: boolean }) =>
     request<{ contact: TrustedContact }>(`/api/contacts/${id}`, { method: 'PATCH', body: JSON.stringify(input) }),
   inviteContact: (id: string) =>
     request<{ ok: boolean; delivery: 'email' | 'failed' | 'unconfigured' }>(`/api/contacts/${id}/invite`, { method: 'POST' }),
@@ -680,6 +698,13 @@ export const api = {
     request<{ display: string; road?: string; city?: string; suburb?: string; state?: string; name?: string; addresstype?: string; cached?: boolean }>(
       `/api/geocode/reverse?lat=${lat}&lng=${lng}`,
     ),
+  /**
+   * Approximate city-level location from the caller's public IP (server-side
+   * lookup). Fallback for when GPS permission is denied or unavailable — the
+   * Home map still shows a position instead of nothing.
+   */
+  geoIpLocation: () =>
+    request<{ lat: number; lng: number; approximate: true; city?: string; country?: string; cached?: boolean }>('/api/geocode/ip'),
   /** Spoken "what's reported near me?": server-computed distance + age, capped results. */
   incidentsNear: (lat: number, lng: number, radiusMeters = 500) =>
     request<{ reports: Array<{ id: string; category: string; description: string; severity: string; distanceMeters: number; ageDays: number }>; radiusMeters: number }>(
@@ -809,10 +834,20 @@ export const api = {
 
 
   // ── AI intent parsing (v0.4, server-side, key never exposed) ──
-  aiIntent: (transcript: string) =>
-    request<{ intent: string; parameters: Record<string, string | number | boolean>; confidence: number; requiresConfirmation: boolean }>(
+  aiIntent: (
+    transcript: string,
+    context?: string,
+  ) =>
+    request<{
+      intent: string;
+      parameters: Record<string, string | number | boolean>;
+      confidence: number;
+      requiresConfirmation: boolean;
+      /** Compound commands ("open settings and save this place as home") — validated server-side, may be partial. */
+      commands?: Array<{ intent: string; parameters: Record<string, string | number | boolean>; confidence: number; requiresConfirmation: boolean }>;
+    }>(
       '/api/ai/intent',
-      { method: 'POST', body: JSON.stringify({ transcript }) },
+      { method: 'POST', body: JSON.stringify(context ? { transcript, context } : { transcript }) },
     ),
 
   // ── AI provider mode (bring-your-own key; key stored encrypted, masked on read) ──
@@ -828,6 +863,15 @@ export const api = {
   // ── Caregiver live-location map (consent-gated) ──
   caregiverUserLocation: (userId: string) =>
     request<CaregiverLiveLocation>(`/api/caregiver/location/${userId}`),
+
+  // ── Caregiver remote configuration (v0.5, ward-consent-gated, audit-logged) ──
+  caregiverWardPreferences: (userId: string) =>
+    request<WardSettings>(`/api/caregiver/ward-settings/${userId}`),
+  updateCaregiverWardPreferences: (userId: string, patch: WardPreferencesPatch) =>
+    request<WardSettings>(`/api/caregiver/ward-settings/${userId}`, {
+      method: 'PUT',
+      body: JSON.stringify(patch),
+    }),
 
   // ── Sarvam AI Speech & Language (Mayura & Saaras) ──
   translate: (input: { input: string; source_language_code?: string; target_language_code?: string }) =>

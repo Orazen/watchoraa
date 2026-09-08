@@ -15,6 +15,7 @@ const createSchema = z.object({
   email: z.string().email().max(200).optional(),
   canReceiveAlerts: z.boolean().default(true),
   canSeeLocation: z.boolean().default(false),
+  canManageSettings: z.boolean().default(false),
 });
 
 contactsRouter.get(
@@ -58,6 +59,7 @@ contactsRouter.patch(
       .object({
         canSeeLocation: z.boolean().optional(),
         canReceiveAlerts: z.boolean().optional(),
+        canManageSettings: z.boolean().optional(),
       })
       .safeParse(request.body);
     if (!parsed.success) {

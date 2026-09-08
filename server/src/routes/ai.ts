@@ -102,6 +102,10 @@ function logAiRequest(entry: {
 
 const intentSchema = z.object({
   transcript: z.string().min(1).max(500),
+  // Ephemeral context the client sends with each request: a short description
+  // of recent commands (for pronoun follow-ups like "take me there too").
+  // Never persisted, never used for anything but this one parse.
+  context: z.string().max(1000).optional(),
 });
 
 // Safety-limited AI intent parsing (v0.4 voice-first): only non-safety-critical
@@ -129,10 +133,44 @@ export const SAFE_AI_INTENTS = [
 
 const INTENT_PROMPT = `You are the intent parser for Watchora, an assistive app for blind and low-vision people.
 Parse the user's spoken command into a single JSON object:
-{"intent": string, "parameters": {string: string|number|boolean}, "confidence": number, "requiresConfirmation": boolean}
+One command: {"intent": string, "parameters": {string: string|number|boolean}, "confidence": number, "requiresConfirmation": boolean}
+Several commands spoken in one breath: {"commands": [<one-command object>, ...]} — max 3, in spoken order.
 Allowed intents: ${SAFE_AI_INTENTS.join(', ')}.
 Never invent emergency, cancellation, or safety-critical intents. If the command is unsafe, unsupported, or unclear, return {"intent":"unknown","parameters":{},"confidence":0,"requiresConfirmation":false}.
-Respond with ONLY the JSON object, no markdown.`;
+When the command refers back to something with a pronoun ("there", "that place", "it again"), use the Recent context block to fill in the concrete parameters.
+Respond with ONLY the JSON object, no markdown.
+
+Examples:
+User command: "open settings and save this place as home"
+→ {"commands":[{"intent":"open_tab","parameters":{"tab":"settings"},"confidence":0.9,"requiresConfirmation":false},{"intent":"save_place","parameters":{"name":"home"},"confidence":0.9,"requiresConfirmation":false}]}
+Context: recent commands — the user asked to navigate to "Roma Termini".
+User command: "take me there again"
+→ {"intent":"start_navigation","parameters":{"destination":"Roma Termini"},"confidence":0.85,"requiresConfirmation":false}
+User command: "call for help"
+→ {"intent":"unknown","parameters":{},"confidence":0,"requiresConfirmation":false}`;
+
+interface ParsedCommand {
+  intent: string;
+  parameters: Record<string, unknown>;
+  confidence: number;
+  requiresConfirmation: boolean;
+}
+
+// Prefix-validate every emitted command against the allow-list and drop
+// anything unknown or malformed — the model can never smuggle in an intent
+// outside SAFE_AI_INTENTS, compound or not.
+function sanitizeCommand(raw: unknown): ParsedCommand | null {
+  if (typeof raw !== 'object' || raw === null) return null;
+  const obj = raw as Record<string, unknown>;
+  const intent = typeof obj.intent === 'string' ? obj.intent : '';
+  if (!SAFE_AI_INTENTS.includes(intent)) return null;
+  const parameters =
+    typeof obj.parameters === 'object' && obj.parameters !== null && !Array.isArray(obj.parameters)
+      ? (obj.parameters as Record<string, unknown>)
+      : {};
+  const confidence = typeof obj.confidence === 'number' ? Math.min(1, Math.max(0, obj.confidence)) : 0;
+  return { intent, parameters, confidence, requiresConfirmation: obj.requiresConfirmation === true };
+}
 
 aiRouter.post(
   '/intent',
@@ -153,10 +191,31 @@ aiRouter.post(
       const pref = await prisma.aiProviderPref.findUnique({ where: { userId: request.userId! } });
       const config = resolveAiConfig(pref, env.GEMINI_API_KEY, env.GEMINI_MODEL);
       const provider = buildProvider(config);
+      // Real-time context: current UTC date/time injected fresh on every
+      // request (ephemeral — never cached, never persisted) so time-relative
+      // wording is grounded in the actual moment.
+      const nowBlock = `Current date/time: ${new Date().toISOString().replace('T', ' ').slice(0, 16)} UTC.`;
+      const contextBlock = parsed.data.context ? `Recent context (client-provided): ${parsed.data.context}` : '';
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 8000);
-      const obj = await provider.completeJson(`${INTENT_PROMPT}\n\nUser command: "${parsed.data.transcript}"`, controller.signal);
+      const obj = await provider.completeJson(
+        `${INTENT_PROMPT}\n\n${[nowBlock, contextBlock].filter(Boolean).join('\n')}\n\nUser command: "${parsed.data.transcript}"`,
+        controller.signal,
+      );
       clearTimeout(timer);
+
+      // Compound commands ({"commands": [...]}) are validated one by one and
+      // unknown parts silently dropped; a single-object reply stays as-is.
+      const commands = Array.isArray(obj.commands)
+        ? (obj.commands.map(sanitizeCommand).filter((c): c is ParsedCommand => c !== null))
+        : [];
+      if (commands.length > 0) {
+        const first = commands[0];
+        // Back-compat: top-level fields mirror the first command so existing
+        // clients that ignore `commands` keep working.
+        response.json({ ...first, commands });
+        return;
+      }
       const intent = String(obj.intent ?? 'unknown');
       if (!SAFE_AI_INTENTS.includes(intent)) {
         response.json(fallback);

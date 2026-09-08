@@ -2,6 +2,58 @@ import { useEffect, useState } from 'react';
 import { api, ApiError, type AiProviderSettings } from './api';
 
 /**
+ * One-tap free-model presets (v0.5): fills provider/model/baseUrl so the user
+ * only pastes a key. All listed providers have a genuinely free tier; Gemini
+ * also works with no key at all via the server-wide key when configured.
+ */
+const FREE_MODEL_PRESETS: Array<{
+  id: string;
+  label: string;
+  provider: 'GEMINI' | 'OPENAI_COMPATIBLE';
+  model: string;
+  baseUrl: string | null;
+  keyUrl: string;
+  keyHint: string;
+}> = [
+  {
+    id: 'groq',
+    label: 'Groq — free, very fast',
+    provider: 'OPENAI_COMPATIBLE',
+    model: 'llama-3.3-70b-versatile',
+    baseUrl: 'https://api.groq.com/openai/v1',
+    keyUrl: 'https://console.groq.com/keys',
+    keyHint: 'Create a free API key at console.groq.com/keys, then paste it below.',
+  },
+  {
+    id: 'gemini',
+    label: 'Google Gemini — free tier',
+    provider: 'GEMINI',
+    model: 'gemini-2.5-flash',
+    baseUrl: null,
+    keyUrl: 'https://aistudio.google.com/app/apikey',
+    keyHint: 'Get a free key at aistudio.google.com (Google account), then paste it below.',
+  },
+  {
+    id: 'openrouter',
+    label: 'OpenRouter — free Llama model',
+    provider: 'OPENAI_COMPATIBLE',
+    model: 'meta-llama/llama-3.3-70b-instruct:free',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    keyUrl: 'https://openrouter.ai/keys',
+    keyHint: 'Create a free key at openrouter.ai/keys, then paste it below.',
+  },
+  {
+    id: 'cerebras',
+    label: 'Cerebras — free tier, fastest inference',
+    provider: 'OPENAI_COMPATIBLE',
+    model: 'llama-3.3-70b',
+    baseUrl: 'https://api.cerebras.ai/v1',
+    keyUrl: 'https://cloud.cerebras.ai',
+    keyHint: 'Create a free key at cloud.cerebras.ai, then paste it below.',
+  },
+];
+
+/**
  * AI provider mode settings (bring-your-own key). The spoken/large-text UI
  * follows the rest of Settings: every control is a real labeled element, and
  * confirmations are announced via the passed-in announce() live region so
@@ -84,12 +136,30 @@ export function AiProviderSection({ announce, speak }: { announce: (message: str
     );
   }
 
+  function applyPreset(preset: (typeof FREE_MODEL_PRESETS)[number]) {
+    setProvider(preset.provider);
+    setModel(preset.model);
+    setBaseUrl(preset.baseUrl ?? '');
+    announce(`${preset.label} selected. ${preset.keyHint}`, 'online');
+    speak(`${preset.label} selected. ${preset.keyHint}`);
+  }
+
   return (
     <div className="settings-section">
       <h3>AI provider</h3>
       <p className="settings-hint">
         Bring your own AI. Jarvis, scene descriptions and answers will use your provider and key. The key is stored encrypted and is never read back or spoken.
       </p>
+      <div className="settings-row">
+        <span>Free preset</span>
+        <div className="control-inline" role="group" aria-label="Free model presets">
+          {FREE_MODEL_PRESETS.map((preset) => (
+            <button key={preset.id} className="ghost-btn" onClick={() => applyPreset(preset)}>
+              {preset.label}
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="settings-row">
         <span>Provider</span>
         <select
