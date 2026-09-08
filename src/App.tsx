@@ -1095,10 +1095,11 @@ function MainApp({
         break;
       case 'where_am_i': {
         // Soundscape-pattern "my location": reverse geocode (road + area) plus
-        // the nearest saved place with clock-direction. GPS timeout gets a
-        // short spoken fallback instead of a long silent hang.
+        // the nearest saved place with clock-direction. GPS timeout falls back
+        // to the same city-level IP fix the Home map uses, so an indoor user
+        // still hears an approximate answer instead of a dead end.
         const whereTimeout = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Location is taking too long. Try again outdoors.')), 6000));
+          setTimeout(() => reject(new Error('gps-timeout')), 6000));
         Promise.race([getCurrentPosition(), whereTimeout])
           .then(async (coords) => {
             const geo = api.reverseGeocode(coords.latitude, coords.longitude).catch(() => null);
@@ -1118,36 +1119,63 @@ function MainApp({
             }
             speak(parts.join(' '), 5, 'where-am-i');
           })
-          .catch((e: Error) => speak(e?.message || 'I could not get your location. Check that location is allowed for Watchora.', 5, 'where-am-i-noloc'));
+          .catch(async () => {
+            // GPS never answered: approximate city-level fallback.
+            try {
+              const ip = await api.geoIpLocation();
+              speak(
+                ip.city
+                  ? `I cannot get a precise fix indoors. Your approximate location is near ${ip.city}${ip.country ? `, ${ip.country}` : ''}. Enable precise location outdoors for street-level detail.`
+                  : 'I cannot get a precise fix indoors, and no approximate location is available right now. Try again outdoors.',
+                5,
+                'where-am-i-ip',
+              );
+            } catch {
+              speak('I could not get your location. Check that location is allowed for Watchora.', 5, 'where-am-i-noloc');
+            }
+          });
         break;
       }
       case 'list_places': {
         tab('routes');
         // Spoken list (Soundscape pattern): places with distance + clock
         // direction from the current position, capped at three. GPS timeout
-        // speaks a short fallback instead of hanging silently.
+        // falls back to the city-level IP fix so indoor users still hear
+        // approximate distances instead of a dead end.
         const placesTimeout = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Location is taking too long. Try again outdoors.')), 6000));
+          setTimeout(() => reject(new Error('gps-timeout')), 6000));
+        const listFromCoords = (coords: Coordinates, approximate: boolean) => {
+          api
+            .listPlaces()
+            .then(({ places }) => {
+              const withCoords = places.filter((pl) => pl.latitude != null && pl.longitude != null);
+              if (withCoords.length === 0) {
+                speak('You have no saved places yet. Say save place at any location to add one.', 5, 'places-empty');
+                return;
+              }
+              const sorted = withCoords
+                .map((pl) => ({ pl, dist: distanceMeters({ latitude: coords.latitude, longitude: coords.longitude }, { latitude: pl.latitude as number, longitude: pl.longitude as number }) }))
+                .sort((a, b) => a.dist - b.dist)
+                .slice(0, 3);
+              const parts = sorted.map(({ pl }) => describePlaceAsSpoken({ latitude: coords.latitude, longitude: coords.longitude }, { latitude: pl.latitude as number, longitude: pl.longitude as number }, pl.label));
+              speak(
+                `${approximate ? 'Using your approximate network location. ' : ''}${withCoords.length} saved place${withCoords.length === 1 ? '' : 's'}. ${parts.join(' ')}`,
+                5,
+                'places-spoken',
+              );
+            })
+            .catch(() => speak('I could not load your saved places.', 5, 'places-error'));
+        };
         Promise.race([getCurrentPosition(), placesTimeout])
-          .then((coords) => {
-            api
-              .listPlaces()
-              .then(({ places }) => {
-                const withCoords = places.filter((pl) => pl.latitude != null && pl.longitude != null);
-                if (withCoords.length === 0) {
-                  speak('You have no saved places yet. Say save place at any location to add one.', 5, 'places-empty');
-                  return;
-                }
-                const sorted = withCoords
-                  .map((pl) => ({ pl, dist: distanceMeters(coords, { latitude: pl.latitude as number, longitude: pl.longitude as number }) }))
-                  .sort((a, b) => a.dist - b.dist)
-                  .slice(0, 3);
-                const parts = sorted.map(({ pl }) => describePlaceAsSpoken(coords, { latitude: pl.latitude as number, longitude: pl.longitude as number }, pl.label));
-                speak(`${withCoords.length} saved place${withCoords.length === 1 ? '' : 's'}. ${parts.join(' ')}`, 5, 'places-spoken');
-              })
-              .catch(() => speak('I could not load your saved places.', 5, 'places-error'));
-          })
-          .catch((e: Error) => speak(e?.message || 'I need your location to describe your places by distance.', 5, 'places-noloc'));
+          .then((coords) => listFromCoords(coords, false))
+          .catch(async () => {
+            try {
+              const ip = await api.geoIpLocation();
+              listFromCoords({ latitude: ip.lat, longitude: ip.lng }, true);
+            } catch {
+              speak('I need your location to describe your places by distance, and no approximate location is available right now.', 5, 'places-noloc');
+            }
+          });
         break;
       }
       case 'save_place':
