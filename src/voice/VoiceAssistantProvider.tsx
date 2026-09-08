@@ -144,6 +144,10 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
   const micUnavailableRef = useRef(false);
   const unavailableAnnouncedRef = useRef(false);
   const startWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Some recognizers fire onend immediately after start() with no onstart and
+  // no error — the watchdog never gets its 4s because onend clears it. Saw
+  // whether onstart actually ran before trusting an onend as a clean stop.
+  const recognizerStartedRef = useRef(false);
   const appliedLangRef = useRef<string | null>(null);
   const appliedWakeRef = useRef<boolean | null>(null);
 
@@ -425,6 +429,7 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
     rec.continuous = true;
     rec.interimResults = true;
     rec.onstart = () => {
+      recognizerStartedRef.current = true;
       markRecognizerAlive();
       setState('listening');
       if (handsFreeOnRef.current && !welcomedRef.current) {
@@ -521,6 +526,13 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
     };
     rec.onend = () => {
       clearStartWatchdog();
+      if (!recognizerStartedRef.current && !stopIntentionalRef.current) {
+        // onend without onstart: the recognizer is a silent dud, not a
+        // finished session. Count it like any other dead start.
+        handleDeadStart();
+        return;
+      }
+      recognizerStartedRef.current = false;
       recognitionRef.current = null;
       activeRef.current = false;
       if (handsFreeOnRef.current && !stopIntentionalRef.current && !permissionDeniedRef.current && !micUnavailableRef.current) {
@@ -531,6 +543,7 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
       }
     };
     try {
+      recognizerStartedRef.current = false;
       rec.start();
       armStartWatchdog();
     } catch {
@@ -613,6 +626,7 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
     rec.continuous = false;
     rec.interimResults = true;
     rec.onstart = () => {
+      recognizerStartedRef.current = true;
       markRecognizerAlive();
       setState('listening');
     };
@@ -641,11 +655,17 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
     };
     rec.onend = () => {
       clearStartWatchdog();
+      if (!recognizerStartedRef.current && !stopIntentionalRef.current) {
+        handleDeadStart();
+        return;
+      }
+      recognizerStartedRef.current = false;
       activeRef.current = false;
       recognitionRef.current = null;
       if (!handsFreeOnRef.current) setState('idle');
     };
     try {
+      recognizerStartedRef.current = false;
       rec.start();
       armStartWatchdog();
     } catch {
