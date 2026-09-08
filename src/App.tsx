@@ -2044,6 +2044,8 @@ function MainApp({
                   }}
                   onLogout={onLogout}
                   readingEntries={readingEntries}
+                  announce={announce}
+                  speak={speak}
                   onDeleteReading={async (id) => {
                     try {
                       await api.deleteReadingEntry(id);
@@ -3153,6 +3155,8 @@ function SettingsTab({
   onLogout,
   readingEntries,
   onDeleteReading,
+  announce,
+  speak,
 }: {
   user: PublicUser;
   language: string;
@@ -3172,6 +3176,8 @@ function SettingsTab({
   onLogout: () => void;
   readingEntries: ReadingEntry[] | null;
   onDeleteReading: (id: string) => void;
+  announce: (message: string, tone?: Tone) => void;
+  speak: (text: string, priority?: SpeechPriority, dedupeKey?: string, rateOverride?: number) => void;
 }) {
   // Group voices by language so the picker reads naturally (e.g. हिन्दी).
   const voiceGroups: Array<[string, TtsVoice[]]> = [];

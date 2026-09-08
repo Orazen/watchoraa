@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Detection } from './yolo.worker';
 import { HAZARD_CLASSES, LANDMARK_CLASSES } from './coco-classes';
+import { DetectionTracker, type TrackedDetection } from './detectionTracker';
 import { fireHapticEvent, type HapticSettings } from './haptics';
-import { DetectionTracker } from './detectionTracker';
 
 // How often we sample a frame for local detection. Not every frame — battery/thermal
 // budget matters (see docs/yolo-ocr-slam-plan.md "Explicit Non-Goals / Risks").
@@ -17,7 +17,7 @@ const IMMEDIATE_AREA_THRESHOLD = 0.12;
 const MIN_ACT_CONFIDENCE = 0.5;
 
 export type HazardState = {
-  detections: Detection[];
+  detections: TrackedDetection[];
   topHazard: Detection | null;
   status: 'idle' | 'warming-up' | 'running' | 'degraded' | 'error';
   fps: number;
@@ -139,7 +139,9 @@ export function useHazardDetection(
       // Temporal smoothing: detections must persist 3 consecutive frames
       // (~1.8s at our 600ms cadence) before the app treats them as real.
       const tracker = trackerRef.current;
-      const smoothed = tracker ? tracker.update(message.detections, Date.now()) : message.detections;
+      const smoothed: TrackedDetection[] = tracker
+        ? tracker.update(message.detections, Date.now())
+        : message.detections.map((d, i) => ({ ...d, trackId: i, hits: 1, isNewlyConfirmed: false }));
 
       const { event: hazardEvent, top } = classifyEvent(smoothed);
 
