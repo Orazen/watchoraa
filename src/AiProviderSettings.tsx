@@ -19,16 +19,16 @@ export const FREE_MODEL_PRESETS: Array<{
 }> = [
   {
     id: 'groq',
-    label: 'Groq — free, very fast',
+    label: 'Groq — free, very fast (text only)',
     provider: 'OPENAI_COMPATIBLE',
     model: 'llama-3.3-70b-versatile',
     baseUrl: 'https://api.groq.com/openai/v1',
     keyUrl: 'https://console.groq.com/keys',
-    keyHint: 'Create a free API key at console.groq.com/keys, then paste it below.',
+    keyHint: 'Create a free API key at console.groq.com/keys, then paste it below. Groq has no vision model, so image modes will use the server fallback.',
   },
   {
     id: 'gemini',
-    label: 'Google Gemini — free tier',
+    label: 'Google Gemini — free tier, vision',
     provider: 'GEMINI',
     model: 'gemini-3.6-flash',
     baseUrl: null,
@@ -37,12 +37,12 @@ export const FREE_MODEL_PRESETS: Array<{
   },
   {
     id: 'openrouter',
-    label: 'OpenRouter — free Llama model',
+    label: 'OpenRouter — free vision model',
     provider: 'OPENAI_COMPATIBLE',
-    model: 'meta-llama/llama-3.3-70b-instruct:free',
+    model: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
     baseUrl: 'https://openrouter.ai/api/v1',
     keyUrl: 'https://openrouter.ai/keys',
-    keyHint: 'Create a free key at openrouter.ai/keys, then paste it below.',
+    keyHint: 'Create a free key at openrouter.ai/keys, then paste it below. The free vision model can be busy at peak times; the app retries automatically.',
   },
   {
     id: 'cerebras',

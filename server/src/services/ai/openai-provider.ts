@@ -19,7 +19,10 @@ const chatResponseSchema = z.object({
     .min(1),
 });
 
-const MODEL_TIMEOUT_MS = 15_000;
+// Free-tier models (notably OpenRouter ":free" reasoning models) can take
+// well over 10s on real photos; 30s keeps them usable without hanging the
+// request path forever.
+const MODEL_TIMEOUT_MS = 30_000;
 
 const modelResponseSchema = z.object({
   summary: z.string().min(1).max(600),
