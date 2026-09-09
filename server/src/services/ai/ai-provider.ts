@@ -36,17 +36,50 @@ export class DemoProvider implements AiProvider {
 /** The per-user configuration that selects and parameterizes a provider. */
 export type ResolvedAiConfig =
   | { source: 'user'; provider: 'GEMINI' | 'OPENAI_COMPATIBLE'; apiKey: string; model: string; baseUrl?: string }
-  | { source: 'server'; provider: 'GEMINI'; apiKey: string; model: string }
+  | { source: 'server'; provider: 'GEMINI' | 'OPENAI_COMPATIBLE'; apiKey: string; model: string; baseUrl?: string }
   | { source: 'demo' };
 
 export const OPENAI_DEFAULT_BASE_URL = 'https://api.openai.com/v1';
 
+/** Server-wide fallback derived from env (AI_* first, legacy GEMINI_* second). */
+export type ServerAiFallback = { provider: 'GEMINI' | 'OPENAI_COMPATIBLE'; apiKey: string; model: string; baseUrl?: string } | null;
+
+/**
+ * Builds the server-wide fallback from environment variables. AI_API_KEY (any
+ * provider) wins over the legacy GEMINI_API_KEY; an OpenAI-compatible
+ * fallback requires AI_BASE_URL since there is no meaningful default beyond
+ * OpenAI itself.
+ */
+export function serverAiFallbackFromEnv(e: {
+  AI_API_KEY?: string;
+  AI_PROVIDER: 'GEMINI' | 'OPENAI_COMPATIBLE';
+  AI_MODEL?: string;
+  AI_BASE_URL?: string;
+  GEMINI_API_KEY?: string;
+  GEMINI_MODEL: string;
+}): ServerAiFallback {
+  if (e.AI_API_KEY) {
+    if (e.AI_PROVIDER === 'OPENAI_COMPATIBLE') {
+      if (!e.AI_BASE_URL) return null;
+      return { provider: 'OPENAI_COMPATIBLE', apiKey: e.AI_API_KEY, model: e.AI_MODEL || 'llama-3.3-70b-versatile', baseUrl: e.AI_BASE_URL };
+    }
+    return { provider: 'GEMINI', apiKey: e.AI_API_KEY, model: e.AI_MODEL || e.GEMINI_MODEL };
+  }
+  if (e.GEMINI_API_KEY) {
+    return { provider: 'GEMINI', apiKey: e.GEMINI_API_KEY, model: e.GEMINI_MODEL };
+  }
+  return null;
+}
+
 /**
  * Resolution order: the user's own AI provider settings (their key, their
- * provider, their model) win; if the user has none, the server-wide Gemini
- * key applies; with neither, AI runs in demo mode.
+ * provider, their model) win; if the user has none, the server-wide key
+ * applies (any provider); with neither, AI runs in demo mode.
  */
-export function resolveAiConfig(userPref: { provider: string; model: string | null; baseUrl: string | null; apiKeyEnc: string | null } | null, serverKey: string | undefined, serverModel: string): ResolvedAiConfig {
+export function resolveAiConfig(
+  userPref: { provider: string; model: string | null; baseUrl: string | null; apiKeyEnc: string | null } | null,
+  serverFallback: ServerAiFallback,
+): ResolvedAiConfig {
   if (userPref?.apiKeyEnc) {
     const apiKey = decryptSecret(userPref.apiKeyEnc);
     if (userPref.provider === 'OPENAI_COMPATIBLE') {
@@ -58,10 +91,10 @@ export function resolveAiConfig(userPref: { provider: string; model: string | nu
         baseUrl: userPref.baseUrl || OPENAI_DEFAULT_BASE_URL,
       };
     }
-    return { source: 'user', provider: 'GEMINI', apiKey, model: userPref.model || serverModel };
+    return { source: 'user', provider: 'GEMINI', apiKey, model: userPref.model || 'gemini-2.5-flash' };
   }
-  if (serverKey) {
-    return { source: 'server', provider: 'GEMINI', apiKey: serverKey, model: serverModel };
+  if (serverFallback) {
+    return { source: 'server', ...serverFallback };
   }
   return { source: 'demo' };
 }
@@ -71,7 +104,9 @@ export function buildProvider(config: ResolvedAiConfig): AiProvider {
     case 'demo':
       return new DemoProvider();
     case 'server':
-      return new GeminiProvider(config.apiKey, config.model);
+      return config.provider === 'OPENAI_COMPATIBLE'
+        ? new OpenAiCompatibleProvider(config.apiKey, config.model, config.baseUrl ?? OPENAI_DEFAULT_BASE_URL)
+        : new GeminiProvider(config.apiKey, config.model);
     case 'user':
       return config.provider === 'OPENAI_COMPATIBLE'
         ? new OpenAiCompatibleProvider(config.apiKey, config.model, config.baseUrl ?? OPENAI_DEFAULT_BASE_URL)

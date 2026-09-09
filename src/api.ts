@@ -161,20 +161,37 @@ export type CaregiverOverview = {
   savedPlaces: Array<SavedPlace & { user: { fullName: string } }>;
 };
 
+/** Masked AI-provider status of a supported person, as seen by their caregiver. */
+export type WardAiProviderStatus = {
+  provider: 'GEMINI' | 'OPENAI_COMPATIBLE';
+  model: string | null;
+  baseUrl: string | null;
+  hasKey: boolean;
+  maskedKey: string | null;
+};
+
+/** AI-provider fields a caregiver may set for the ward (key is write-only). */
+export type WardAiProviderPatch = {
+  provider: 'GEMINI' | 'OPENAI_COMPATIBLE';
+  model?: string | null;
+  baseUrl?: string | null;
+  apiKey?: string | null;
+};
+
 /** Accessibility settings of a supported person, as seen by their caregiver. */
 export type WardSettings = {
   ward: { id: string; fullName: string; preferredLanguage: string };
   preferences: AccessibilityPreferences | null;
-  aiProvider: { provider: 'GEMINI' | 'OPENAI_COMPATIBLE'; model: string | null; hasKey: boolean };
+  aiProvider: WardAiProviderStatus;
 };
 
-/** Ward accessibility fields a caregiver may change (same set the ward can). */
+/** Ward fields a caregiver may change (accessibility prefs + AI provider). */
 export type WardPreferencesPatch = Partial<
   Pick<
     AccessibilityPreferences,
     'speechRate' | 'voiceName' | 'instructionDetail' | 'vibrationEnabled' | 'audioEnabled' | 'reducedMotion' | 'textScale' | 'lowConnectivityMode' | 'imageRetentionHours'
   >
->;
+> & { aiProvider?: WardAiProviderPatch };
 
 export type PromptVersion = {
   id: string;

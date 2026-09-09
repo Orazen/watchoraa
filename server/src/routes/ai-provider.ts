@@ -25,6 +25,7 @@ const ALLOWED_BASE_HOSTS = new Set([
   'api.together.xyz',
   'api.mistral.ai',
   'api.deepseek.com',
+  'api.cerebras.ai',
   // Common local/self-hosted endpoints (browser cannot reach these; a server
   // deployment next to the user's own machine can).
   'localhost',
@@ -42,7 +43,8 @@ function isSelfHostedHost(host: string): boolean {
   );
 }
 
-function validateBaseUrl(raw: string): string | null {
+/** Shared with the caregiver ward-settings route, which accepts the same config. */
+export function validateBaseUrl(raw: string): string | null {
   try {
     const url = new URL(raw);
     const host = url.hostname;
@@ -58,7 +60,8 @@ function validateBaseUrl(raw: string): string | null {
   }
 }
 
-function serialize(pref: { provider: string; model: string | null; baseUrl: string | null; apiKeyEnc: string | null }) {
+/** Masked preview of an AI provider pref — key material never leaves the server. */
+export function serializeAiPref(pref: { provider: string; model: string | null; baseUrl: string | null; apiKeyEnc: string | null }) {
   let maskedKey: string | null = null;
   if (pref.apiKeyEnc) {
     try {
@@ -82,7 +85,7 @@ aiProviderRouter.get(
     const pref = await prisma.aiProviderPref.findUnique({ where: { userId: request.userId! } });
     response.json({
       providerSettings: pref
-        ? serialize(pref)
+        ? serializeAiPref(pref)
         : { provider: 'GEMINI', model: null, baseUrl: null, hasKey: false, maskedKey: null },
     });
   }),
@@ -150,7 +153,7 @@ aiProviderRouter.put(
       metadata: { provider, hasKey: apiKey !== undefined ? Boolean(apiKey) : undefined, model: data.model ?? undefined },
     });
 
-    response.json({ providerSettings: serialize(updated) });
+    response.json({ providerSettings: serializeAiPref(updated) });
   }),
 );
 
@@ -168,7 +171,7 @@ aiProviderRouter.delete(
     response.json({
       ok: true,
       providerSettings: updated
-        ? serialize(updated)
+        ? serializeAiPref(updated)
         : { provider: 'GEMINI', model: null, baseUrl: null, hasKey: false, maskedKey: null },
     });
   }),

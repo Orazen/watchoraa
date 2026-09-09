@@ -5,7 +5,7 @@ import { env } from '../env.js';
 import { asyncHandler } from '../lib/asyncHandler.js';
 import { requireAuth } from '../lib/auth.js';
 import { prisma } from '../lib/prisma.js';
-import { AiProviderError, buildProvider, resolveAiConfig, type AiMode } from '../services/ai/ai-provider.js';
+import { AiProviderError, buildProvider, resolveAiConfig, serverAiFallbackFromEnv, type AiMode, type ServerAiFallback } from '../services/ai/ai-provider.js';
 import { buildPrompt, buildPromptWithOverride } from '../services/ai/prompt-builder.js';
 import { rememberSummary, recentSummaries, newestSummaryAgeSeconds } from '../lib/scene-memory.js';
 
@@ -14,6 +14,10 @@ export const aiRouter = Router();
 const MAX_IMAGE_BYTES = 6 * 1024 * 1024; // 6MB decoded
 const ALLOWED_IMAGE_MIME = new Set(['image/jpeg', 'image/png']);
 const DATA_URL_PATTERN = /^data:(image\/(?:jpeg|png));base64,([A-Za-z0-9+/=]+)$/;
+
+// Server-wide AI fallback (AI_API_KEY any-provider first, legacy GEMINI_API_KEY
+// second) — used whenever the requesting user has no key of their own.
+const serverFallback: ServerAiFallback = serverAiFallbackFromEnv(env);
 
 const generateSchema = z.object({
   mode: z.enum(['navigation', 'assistant', 'reading', 'environment', 'emergency']),
@@ -189,7 +193,7 @@ aiRouter.post(
     const fallback = { intent: 'unknown', parameters: {}, confidence: 0, requiresConfirmation: false };
     try {
       const pref = await prisma.aiProviderPref.findUnique({ where: { userId: request.userId! } });
-      const config = resolveAiConfig(pref, env.GEMINI_API_KEY, env.GEMINI_MODEL);
+      const config = resolveAiConfig(pref, serverFallback);
       const provider = buildProvider(config);
       // Real-time context: current UTC date/time injected fresh on every
       // request (ephemeral — never cached, never persisted) so time-relative
@@ -306,15 +310,15 @@ aiRouter.post(
     }
 
     // Provider resolution: the user's own AI provider settings (bring-your-own
-    // key) win over the server-wide Gemini key; demo mode applies only when
-    // neither exists or the caller explicitly asked for demo.
+    // key) win over the server-wide key (any provider); demo mode applies only
+    // when neither exists or the caller explicitly asked for demo.
     let config: Awaited<ReturnType<typeof resolveAiConfig>> = { source: 'demo' };
     if (demo !== true) {
       try {
         const pref = await prisma.aiProviderPref.findUnique({ where: { userId: request.userId! } });
-        config = resolveAiConfig(pref, env.GEMINI_API_KEY, env.GEMINI_MODEL);
+        config = resolveAiConfig(pref, serverFallback);
       } catch {
-        config = env.GEMINI_API_KEY ? { source: 'server', provider: 'GEMINI', apiKey: env.GEMINI_API_KEY, model: env.GEMINI_MODEL } : { source: 'demo' };
+        config = serverFallback ? { source: 'server', ...serverFallback } : { source: 'demo' };
       }
     }
     const provider = buildProvider(config);

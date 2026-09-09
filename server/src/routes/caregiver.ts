@@ -4,6 +4,9 @@ import { asyncHandler } from '../lib/asyncHandler.js';
 import { requireAuth } from '../lib/auth.js';
 import { recordAudit } from '../lib/audit.js';
 import { prisma } from '../lib/prisma.js';
+import { encryptSecret } from '../lib/secret-box.js';
+import { serializeAiPref, validateBaseUrl } from './ai-provider.js';
+import { OPENAI_DEFAULT_BASE_URL } from '../services/ai/ai-provider.js';
 
 // Caregiver portal (roadmap Phase 5): a CAREGIVER sees the blind users who
 // listed them as a trusted contact (matched by email), plus those users' SOS
@@ -169,11 +172,15 @@ caregiverRouter.get(
 // ── Ward settings: view + remote config (v0.5 caregiver linking) ──
 // The blind user opts in per-contact via TrustedContact.canManageSettings
 // (they add the caregiver's email as a trusted contact and flip the toggle).
-// Once granted, the caregiver can READ the ward's accessibility preferences
-// and AI-provider status and CHANGE the accessibility preferences remotely —
-// never the AI key itself (a caregiver must never be able to exfiltrate or
-// swap the ward's AI provider/key). Every read and write is audit-logged with
-// both actor and ward so consent disputes have a trail.
+// Once granted, the caregiver can READ and CHANGE the ward's accessibility
+// preferences AND configure the ward's AI provider remotely (e.g. a family
+// member sets up a free Groq key so the ward's AI works out of the box).
+// Guardrails: the key is write-only — it is encrypted on arrival and only a
+// masked preview ever comes back, so a caregiver cannot read or exfiltrate an
+// existing key; provider/model changes and key writes are audit-logged with
+// both actor and ward; and the ward keeps full control — they can override or
+// remove the configuration from their own AI settings at any time, and can
+// revoke the caregiver's access entirely.
 
 /** Resolves the pairing or returns null after writing the error response. */
 async function resolveManagedWard(
@@ -225,14 +232,25 @@ caregiverRouter.get(
       ward: { id: resolved.wardId, fullName: resolved.wardName, preferredLanguage: ward?.preferredLanguage ?? 'en' },
       // Accessibility preferences the caregiver may change remotely.
       preferences: prefs ?? null,
-      // AI provider surfaced read-only (provider + model + hasKey) — never the
-      // key, and never changeable from the caregiver account.
+      // AI provider surfaced with masked key preview only — the key itself is
+      // never returned to any client (caregiver or ward).
       aiProvider: aiPref
-        ? { provider: aiPref.provider, model: aiPref.model, hasKey: Boolean(aiPref.apiKeyEnc) }
-        : { provider: 'GEMINI', model: null, hasKey: false },
+        ? serializeAiPref(aiPref)
+        : { provider: 'GEMINI', model: null, baseUrl: null, hasKey: false, maskedKey: null },
     });
   }),
 );
+
+// Ward AI-provider patch: same validation as the user's own /ai-provider PUT.
+// The key is write-only — accepted, encrypted, never echoed back.
+const wardAiProviderSchema = z
+  .object({
+    provider: z.enum(['GEMINI', 'OPENAI_COMPATIBLE']),
+    model: z.string().max(120).nullable().optional(),
+    baseUrl: z.string().max(300).nullable().optional(),
+    apiKey: z.string().min(8).max(400).nullable().optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, { message: 'At least one AI provider field is required' });
 
 const wardPrefsSchema = z
   .object({
@@ -245,6 +263,7 @@ const wardPrefsSchema = z
     textScale: z.number().min(0.8).max(2).optional(),
     lowConnectivityMode: z.boolean().optional(),
     imageRetentionHours: z.number().int().min(0).max(24 * 7).optional(),
+    aiProvider: wardAiProviderSchema.optional(),
   })
   .refine((value) => Object.keys(value).length > 0, { message: 'At least one preference is required' });
 
@@ -270,26 +289,79 @@ caregiverRouter.put(
     }
     const resolved = await resolveManagedWard(request, response);
     if (!resolved) return;
-    const updated = await prisma.accessibilityPrefs.upsert({
-      where: { userId: resolved.wardId },
-      create: { userId: resolved.wardId, ...WARD_PREFS_DEFAULTS, ...parsed.data },
-      update: parsed.data,
-    });
-    await recordAudit({
-      actorId: resolved.caregiverId,
-      action: 'caregiver.ward_settings_update',
-      entityType: 'AccessibilityPrefs',
-      entityId: updated.id,
-      metadata: { fields: Object.keys(parsed.data) },
-    });
+    const { aiProvider, ...prefData } = parsed.data;
+
+    let updated = await prisma.accessibilityPrefs.findUnique({ where: { userId: resolved.wardId } });
+    if (Object.keys(prefData).length > 0) {
+      updated = await prisma.accessibilityPrefs.upsert({
+        where: { userId: resolved.wardId },
+        create: { userId: resolved.wardId, ...WARD_PREFS_DEFAULTS, ...prefData },
+        update: prefData,
+      });
+      await recordAudit({
+        actorId: resolved.caregiverId,
+        action: 'caregiver.ward_settings_update',
+        entityType: 'AccessibilityPrefs',
+        entityId: updated.id,
+        metadata: { fields: Object.keys(prefData) },
+      });
+    }
+
+    // Ward AI provider: mirror the ward's own /ai-provider PUT validation, but
+    // audit under a caregiver action so the trail shows who configured what.
+    let aiPrefRow = await prisma.aiProviderPref.findUnique({ where: { userId: resolved.wardId } });
+    if (aiProvider) {
+      let normalizedBaseUrl: string | null | undefined = undefined;
+      if (aiProvider.baseUrl !== undefined) {
+        if (aiProvider.baseUrl === null || aiProvider.baseUrl.trim() === '') {
+          normalizedBaseUrl = aiProvider.provider === 'OPENAI_COMPATIBLE' ? OPENAI_DEFAULT_BASE_URL : null;
+        } else {
+          const ok = validateBaseUrl(aiProvider.baseUrl.trim());
+          if (!ok) {
+            response.status(400).json({
+              error:
+                'Base URL must be https and point at a supported AI endpoint (api.openai.com, api.groq.com, openrouter.ai, api.cerebras.ai, api.together.xyz, api.mistral.ai, api.deepseek.com) or a private/self-hosted host.',
+            });
+            return;
+          }
+          normalizedBaseUrl = ok;
+        }
+      }
+      if (aiProvider.provider === 'GEMINI' && normalizedBaseUrl) {
+        response.status(400).json({ error: 'Gemini does not use a custom base URL.' });
+        return;
+      }
+      const aiData = {
+        provider: aiProvider.provider,
+        ...(aiProvider.model !== undefined ? { model: aiProvider.model && aiProvider.model.trim() !== '' ? aiProvider.model.trim() : null } : {}),
+        ...(normalizedBaseUrl !== undefined ? { baseUrl: normalizedBaseUrl } : {}),
+        ...(aiProvider.apiKey !== undefined ? { apiKeyEnc: aiProvider.apiKey ? encryptSecret(aiProvider.apiKey) : null } : {}),
+      };
+      aiPrefRow = await prisma.aiProviderPref.upsert({
+        where: { userId: resolved.wardId },
+        create: { userId: resolved.wardId, ...aiData },
+        update: aiData,
+      });
+      await recordAudit({
+        actorId: resolved.caregiverId,
+        action: 'caregiver.ward_ai_provider_update',
+        entityType: 'AiProviderPref',
+        entityId: aiPrefRow.id,
+        metadata: {
+          provider: aiProvider.provider,
+          hasKey: aiProvider.apiKey !== undefined ? Boolean(aiProvider.apiKey) : undefined,
+          model: aiData.model ?? undefined,
+        },
+      });
+    }
+
     // Return the same envelope as GET so the client can refresh the whole panel.
-    const aiPref = await prisma.aiProviderPref.findUnique({ where: { userId: resolved.wardId } });
     response.json({
       ward: { id: resolved.wardId, fullName: resolved.wardName, preferredLanguage: resolved.wardPreferredLanguage },
       preferences: updated,
-      aiProvider: aiPref
-        ? { provider: aiPref.provider, model: aiPref.model, hasKey: Boolean(aiPref.apiKeyEnc) }
-        : { provider: 'GEMINI', model: null, hasKey: false },
+      aiProvider: aiPrefRow
+        ? serializeAiPref(aiPrefRow)
+        : { provider: 'GEMINI', model: null, baseUrl: null, hasKey: false, maskedKey: null },
     });
   }),
 );

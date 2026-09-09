@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError, getToken, getRefreshToken, setSession, clearSession, setToken, localeFromVoice, getCachedUser, setCachedUser } from './api';
-import { AiProviderSection } from './AiProviderSettings';
+import { AiProviderSection, FREE_MODEL_PRESETS } from './AiProviderSettings';
 import { scanBarcode, cachedProduct, rememberProduct, formatProductSpeech, type ScanHandle } from './barcode/productScan';
 import type {
   AdminAssistanceRequest,
@@ -3025,6 +3025,10 @@ function WardSettingsPanel({ userId, wardName, announce }: { userId: string; war
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [draft, setDraft] = useState<WardPreferencesPatch>({});
+  const [aiProvider, setAiProvider] = useState<'GEMINI' | 'OPENAI_COMPATIBLE'>('GEMINI');
+  const [aiModel, setAiModel] = useState('');
+  const [aiBaseUrl, setAiBaseUrl] = useState('');
+  const [aiKey, setAiKey] = useState('');
 
   useEffect(() => {
     api
@@ -3042,6 +3046,9 @@ function WardSettingsPanel({ userId, wardName, announce }: { userId: string; war
           lowConnectivityMode: s.preferences.lowConnectivityMode,
           imageRetentionHours: s.preferences.imageRetentionHours,
         } : {});
+        setAiProvider(s.aiProvider.provider);
+        setAiModel(s.aiProvider.model ?? '');
+        setAiBaseUrl(s.aiProvider.baseUrl ?? '');
       })
       .catch(() => setLoadError(true));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3068,14 +3075,63 @@ function WardSettingsPanel({ userId, wardName, announce }: { userId: string; war
     }
   }
 
+  async function applyAiPreset(presetId: string) {
+    const preset = FREE_MODEL_PRESETS.find((p) => p.id === presetId);
+    if (!preset) return;
+    setAiProvider(preset.provider);
+    setAiModel(preset.model);
+    setAiBaseUrl(preset.baseUrl ?? '');
+    announce(`${preset.label} selected for ${wardName}. ${preset.keyHint}`, 'online');
+  }
+
+  async function saveAiProvider() {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const res = await api.updateCaregiverWardPreferences(userId, {
+        aiProvider: {
+          provider: aiProvider,
+          model: aiModel.trim() || null,
+          baseUrl: aiProvider === 'OPENAI_COMPATIBLE' ? aiBaseUrl.trim() || null : null,
+          ...(aiKey.trim() ? { apiKey: aiKey.trim() } : {}),
+        },
+      });
+      setSettings(res);
+      setAiKey('');
+      setSavedAt(new Date().toLocaleTimeString());
+      announce(`AI provider for ${wardName} saved. ${res.aiProvider.hasKey ? `Key on file ${res.aiProvider.maskedKey ?? ''}`.trim() : 'No key stored yet — AI will use the platform provider or demo mode.'}`, 'online');
+    } catch (error) {
+      announce(error instanceof ApiError ? error.message : `Could not save the AI provider for ${wardName}.`, 'error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeAiKey() {
+    if (saving) return;
+    setSaving(true);
+    try {
+      const res = await api.updateCaregiverWardPreferences(userId, {
+        aiProvider: { provider: aiProvider, apiKey: null },
+      });
+      setSettings(res);
+      setAiKey('');
+      announce(`AI key removed for ${wardName}.`, 'online');
+    } catch (error) {
+      announce(error instanceof ApiError ? error.message : `Could not remove the AI key for ${wardName}.`, 'error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const d = { ...(settings.preferences ?? {}), ...draft } as Partial<import('./api').AccessibilityPreferences> & WardPreferencesPatch;
 
   return (
     <div className="ward-settings-panel" style={{ display: 'grid', gap: 10 }}>
       <p className="muted-note">
         Remote care for <strong>{settings.ward.fullName}</strong> · preferred language {settings.ward.preferredLanguage}.
-        Only the settings below can be changed — the AI key is never visible here, every change is logged, and{' '}
-        {settings.ward.fullName.split(' ')[0] ?? 'this user'} can revoke access at any time.
+        Every change below is logged, the AI key is never visible once saved (only a masked preview like ••1234), and{' '}
+        {settings.ward.fullName.split(' ')[0] ?? 'this user'} can revoke access or change anything at any time.
       </p>
 
       <div className="control-inline" style={{ flexWrap: 'wrap', gap: 8 }}>
@@ -3143,10 +3199,87 @@ function WardSettingsPanel({ userId, wardName, announce }: { userId: string; war
         {savedAt && <span className="pill pill-success" role="status">Saved {savedAt}</span>}
       </div>
 
+      <div className="settings-section" style={{ borderTop: '1px solid rgba(128,128,128,0.3)', paddingTop: 10 }}>
+        <h3>AI provider for {wardName}</h3>
+        <p className="settings-hint">
+          Set up the AI that powers scene descriptions and answers for this user — for example a free Groq or Cerebras
+          key. The key is stored encrypted and is never shown back; {settings.ward.fullName.split(' ')[0] ?? 'this user'}
+          {' '}can change or remove it anytime in their own AI settings.
+        </p>
+        <div className="settings-row">
+          <span>Free preset</span>
+          <div className="control-inline" role="group" aria-label={`Free model presets for ${wardName}`}>
+            {FREE_MODEL_PRESETS.map((preset) => (
+              <button key={preset.id} className="ghost-btn" onClick={() => applyAiPreset(preset.id)}>
+                {preset.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="settings-row">
+          <span>Provider</span>
+          <select
+            value={aiProvider}
+            onChange={(event) => setAiProvider(event.target.value === 'OPENAI_COMPATIBLE' ? 'OPENAI_COMPATIBLE' : 'GEMINI')}
+            aria-label={`AI provider for ${wardName}`}
+            style={{ maxWidth: '100%' }}
+          >
+            <option value="GEMINI">Google Gemini</option>
+            <option value="OPENAI_COMPATIBLE">OpenAI-compatible (Groq, Cerebras, OpenRouter…)</option>
+          </select>
+        </div>
+        <div className="settings-row">
+          <span>Model</span>
+          <input
+            type="text"
+            value={aiModel}
+            onChange={(event) => setAiModel(event.target.value)}
+            placeholder={aiProvider === 'GEMINI' ? 'gemini-3.6-flash' : 'llama-3.3-70b-versatile'}
+            aria-label={`AI model for ${wardName}`}
+            style={{ maxWidth: '100%' }}
+          />
+        </div>
+        {aiProvider === 'OPENAI_COMPATIBLE' && (
+          <div className="settings-row">
+            <span>API base URL</span>
+            <input
+              type="url"
+              value={aiBaseUrl}
+              onChange={(event) => setAiBaseUrl(event.target.value)}
+              placeholder="https://api.groq.com/openai/v1"
+              aria-label={`API base URL for ${wardName}`}
+              style={{ maxWidth: '100%' }}
+            />
+          </div>
+        )}
+        <div className="settings-row">
+          <span>API key</span>
+          <input
+            type="password"
+            value={aiKey}
+            onChange={(event) => setAiKey(event.target.value)}
+            placeholder={settings.aiProvider.hasKey ? `Stored (${settings.aiProvider.maskedKey ?? 'saved'}) — type to replace` : 'Paste an API key'}
+            aria-label={`API key for ${wardName}`}
+            autoComplete="off"
+            style={{ maxWidth: '100%' }}
+          />
+        </div>
+        <div className="control-inline">
+          <button className="secondary-btn" disabled={saving} onClick={saveAiProvider}>
+            {saving ? 'Saving…' : 'Save AI provider'}
+          </button>
+          {settings.aiProvider.hasKey && (
+            <button className="ghost-btn" disabled={saving} onClick={removeAiKey}>
+              Remove key
+            </button>
+          )}
+        </div>
+      </div>
+
       <p className="muted-note">
-        AI provider (read-only): {settings.aiProvider.provider}
+        AI provider currently: {settings.aiProvider.provider}
         {settings.aiProvider.model ? ` · ${settings.aiProvider.model}` : ''} ·{' '}
-        {settings.aiProvider.hasKey ? 'key configured by the user' : 'no AI key yet (free presets available in their AI settings)'}.
+        {settings.aiProvider.hasKey ? `key on file ${settings.aiProvider.maskedKey ?? ''}`.trim() : 'no AI key yet (set one above, or the platform AI / demo mode applies)'}.
       </p>
     </div>
   );

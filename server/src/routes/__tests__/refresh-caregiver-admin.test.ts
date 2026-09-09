@@ -360,4 +360,83 @@ describe("/api/caregiver/ward-settings/:userId (remote config)", () => {
       .set("Authorization", `Bearer ${blindToken}`);
     expect(view.status).toBe(403);
   });
+
+  it("lets a granted caregiver configure the ward's AI provider — key write-only, never echoed", async () => {
+    const { prisma } = await import("../../lib/prisma.js");
+    const contact = await prisma.trustedContact.create({
+      data: { userId: blindId, name: "Caregiver User", email: caregiverEmail, canReceiveAlerts: true, canManageSettings: true },
+    });
+
+    const wardKey = `ward-test-${Date.now()}`;
+    const save = await request(app)
+      .put(`/api/caregiver/ward-settings/${blindId}`)
+      .set("Authorization", `Bearer ${caregiverToken}`)
+      .send({
+        aiProvider: {
+          provider: "OPENAI_COMPATIBLE",
+          model: "llama-3.3-70b-versatile",
+          baseUrl: "https://api.groq.com/openai/v1",
+          apiKey: wardKey,
+        },
+      });
+    expect(save.status).toBe(200);
+    expect(save.body.aiProvider.provider).toBe("OPENAI_COMPATIBLE");
+    expect(save.body.aiProvider.model).toBe("llama-3.3-70b-versatile");
+    expect(save.body.aiProvider.hasKey).toBe(true);
+    // Key material must never appear anywhere in the response.
+    expect(JSON.stringify(save.body)).not.toContain(wardKey);
+
+    const stored = await prisma.aiProviderPref.findUnique({ where: { userId: blindId } });
+    expect(stored?.apiKeyEnc).toBeTruthy();
+    expect(stored?.apiKeyEnc).not.toContain(wardKey);
+    expect(stored?.baseUrl).toBe("https://api.groq.com/openai/v1");
+
+    // The masked preview round-trips on GET without leaking the key.
+    const view = await request(app)
+      .get(`/api/caregiver/ward-settings/${blindId}`)
+      .set("Authorization", `Bearer ${caregiverToken}`);
+    expect(view.status).toBe(200);
+    expect(view.body.aiProvider.hasKey).toBe(true);
+    expect(typeof view.body.aiProvider.maskedKey).toBe("string");
+    expect(JSON.stringify(view.body)).not.toContain(wardKey);
+
+    // Audit trail records the caregiver action with actor + ward, no key.
+    const audit = await prisma.auditLog.findFirst({ where: { actorId: caregiverId, action: "caregiver.ward_ai_provider_update", entityId: stored!.id } });
+    expect(audit).toBeTruthy();
+    expect(JSON.stringify(audit?.metadata ?? {})).not.toContain(wardKey);
+
+    // AI-provider-only payload (no accessibility fields) is valid too.
+    const aiOnly = await request(app)
+      .put(`/api/caregiver/ward-settings/${blindId}`)
+      .set("Authorization", `Bearer ${caregiverToken}`)
+      .send({ aiProvider: { provider: "GEMINI" } });
+    expect(aiOnly.status).toBe(200);
+    expect(aiOnly.body.aiProvider.provider).toBe("GEMINI");
+
+    // Removing the key via apiKey: null clears it.
+    const cleared = await request(app)
+      .put(`/api/caregiver/ward-settings/${blindId}`)
+      .set("Authorization", `Bearer ${caregiverToken}`)
+      .send({ aiProvider: { provider: "GEMINI", apiKey: null } });
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.aiProvider.hasKey).toBe(false);
+
+    // Invalid base URL is rejected.
+    const badUrl = await request(app)
+      .put(`/api/caregiver/ward-settings/${blindId}`)
+      .set("Authorization", `Bearer ${caregiverToken}`)
+      .send({ aiProvider: { provider: "OPENAI_COMPATIBLE", baseUrl: "https://evil.example.com/v1" } });
+    expect(badUrl.status).toBe(400);
+
+    // Revoked consent closes the whole endpoint again.
+    await prisma.trustedContact.update({ where: { id: contact.id }, data: { canManageSettings: false } });
+    const revoked = await request(app)
+      .put(`/api/caregiver/ward-settings/${blindId}`)
+      .set("Authorization", `Bearer ${caregiverToken}`)
+      .send({ aiProvider: { provider: "GEMINI" } });
+    expect(revoked.status).toBe(403);
+
+    await prisma.trustedContact.delete({ where: { id: contact.id } });
+    await prisma.aiProviderPref.delete({ where: { userId: blindId } });
+  });
 });

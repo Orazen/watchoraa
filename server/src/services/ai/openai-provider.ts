@@ -52,35 +52,48 @@ export class OpenAiCompatibleProvider implements AiProvider {
       });
     }
 
-    const timeoutController = new AbortController();
-    const timeout = setTimeout(() => timeoutController.abort(), MODEL_TIMEOUT_MS);
-    const onExternalAbort = () => timeoutController.abort();
-    signal.addEventListener('abort', onExternalAbort);
-
+    const MAX_ATTEMPTS = 3;
     let response: Response;
-    try {
-      response = await safeFetch(`${this.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.apiKey}`,
-        },
-        body: JSON.stringify({
-          model: this.model,
-          messages: [{ role: 'user', content }],
-          temperature: 0.4,
-          response_format: { type: 'json_object' },
-        }),
-        signal: timeoutController.signal,
-      });
-    } catch (error) {
-      if (timeoutController.signal.aborted) {
-        throw new AiProviderError('AI request timed out', 'timeout');
+    for (let attempt = 1; ; attempt++) {
+      const timeoutController = new AbortController();
+      const timeout = setTimeout(() => timeoutController.abort(), MODEL_TIMEOUT_MS);
+      const onExternalAbort = () => timeoutController.abort();
+      signal.addEventListener('abort', onExternalAbort);
+      try {
+        response = await safeFetch(`${this.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${this.apiKey}`,
+          },
+          body: JSON.stringify({
+            model: this.model,
+            messages: [{ role: 'user', content }],
+            temperature: 0.4,
+            response_format: { type: 'json_object' },
+          }),
+          signal: timeoutController.signal,
+        });
+      } catch (error) {
+        if (timeoutController.signal.aborted) {
+          throw new AiProviderError('AI request timed out', 'timeout');
+        }
+        throw new AiProviderError(error instanceof Error ? error.message : 'AI request failed', 'provider_error');
+      } finally {
+        clearTimeout(timeout);
+        signal.removeEventListener('abort', onExternalAbort);
       }
-      throw new AiProviderError(error instanceof Error ? error.message : 'AI request failed', 'provider_error');
-    } finally {
-      clearTimeout(timeout);
-      signal.removeEventListener('abort', onExternalAbort);
+      // Free-tier pools (e.g. OpenRouter ":free" models) throttle transiently
+      // with 429; retry with short backoff instead of failing the call.
+      if (response.status !== 429 || attempt >= MAX_ATTEMPTS) break;
+      await new Promise<void>((resolve) => {
+        const t = setTimeout(resolve, 1500 * attempt);
+        signal.addEventListener('abort', () => {
+          clearTimeout(t);
+          resolve();
+        }, { once: true });
+      });
+      if (signal.aborted) throw new AiProviderError('AI request cancelled', 'timeout');
     }
 
     if (response.status === 400 || response.status === 401 || response.status === 403) {

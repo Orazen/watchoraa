@@ -5,8 +5,10 @@ import { api, ApiError, type AiProviderSettings } from './api';
  * One-tap free-model presets (v0.5): fills provider/model/baseUrl so the user
  * only pastes a key. All listed providers have a genuinely free tier; Gemini
  * also works with no key at all via the server-wide key when configured.
+ * Shared with the caregiver ward-settings panel, which configures the same
+ * fields on the ward's behalf.
  */
-const FREE_MODEL_PRESETS: Array<{
+export const FREE_MODEL_PRESETS: Array<{
   id: string;
   label: string;
   provider: 'GEMINI' | 'OPENAI_COMPATIBLE';
@@ -28,10 +30,10 @@ const FREE_MODEL_PRESETS: Array<{
     id: 'gemini',
     label: 'Google Gemini — free tier',
     provider: 'GEMINI',
-    model: 'gemini-2.5-flash',
+    model: 'gemini-3.6-flash',
     baseUrl: null,
     keyUrl: 'https://aistudio.google.com/app/apikey',
-    keyHint: 'Get a free key at aistudio.google.com (Google account), then paste it below.',
+    keyHint: 'Get a free key at aistudio.google.com (Google account), then paste it below. New Google projects may need billing enabled first.',
   },
   {
     id: 'openrouter',
@@ -178,7 +180,7 @@ export function AiProviderSection({ announce, speak }: { announce: (message: str
           type="text"
           value={model}
           onChange={(event) => setModel(event.target.value)}
-          placeholder={provider === 'GEMINI' ? 'gemini-2.5-flash' : 'gpt-4o-mini'}
+          placeholder={provider === 'GEMINI' ? 'gemini-3.6-flash' : 'gpt-4o-mini'}
           aria-label="AI model name"
           style={{ maxWidth: '100%' }}
         />
