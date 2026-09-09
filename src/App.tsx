@@ -1680,7 +1680,7 @@ function MainApp({
             <span className="eyebrow">watchora assist</span>
           </div>
           <h2>Camera-to-voice assistance</h2>
-          <p className="hero-subtitle">Point the camera, pick a mode, and get a spoken description powered by Gemini.</p>
+          <p className="hero-subtitle">Point the camera, pick a mode, and get an instant spoken description of your surroundings.</p>
         </div>
         <div className="live-panel">
           <div className="live-panel-head">
@@ -1855,7 +1855,7 @@ function MainApp({
                   ) : aiResult.source === 'local-ocr' ? (
                     <span className="pill pill-success">Read locally, on this device</span>
                   ) : (
-                    <span className="pill pill-success">Gemini live</span>
+                    <span className="pill pill-success">AI live</span>
                   )}
                   {aiResult.shouldStop ? <span className="pill pill-danger">Stop recommended</span> : null}
                 </div>

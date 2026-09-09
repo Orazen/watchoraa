@@ -607,6 +607,34 @@ function handleOfflineFallback<T>(path: string, options: RequestInit = {}): T {
     return { intent: 'navigate', parameters: {}, confidence: 0.95, requiresConfirmation: false } as T;
   }
 
+  if (path === '/api/ai-provider') {
+    // Demo echo of the BYO-provider settings endpoint. Reads always succeed;
+    // writes are echoed back with the key masked — a demo build never stores
+    // real credentials, matching the server's maskedKey-only contract.
+    const defaultSettings = {
+      provider: 'GEMINI' as const,
+      model: null,
+      baseUrl: null,
+      hasKey: false,
+      maskedKey: null,
+    };
+    if (method === 'GET') return { providerSettings: defaultSettings } as T;
+    if (method === 'DELETE') return { ok: true, providerSettings: defaultSettings } as T;
+    const apiKey = typeof body.apiKey === 'string' ? body.apiKey.trim() : '';
+    return {
+      providerSettings: {
+        provider: body.provider === 'OPENAI_COMPATIBLE' ? 'OPENAI_COMPATIBLE' : 'GEMINI',
+        model: typeof body.model === 'string' && body.model ? body.model : null,
+        baseUrl:
+          body.provider === 'OPENAI_COMPATIBLE' && typeof body.baseUrl === 'string' && body.baseUrl
+            ? body.baseUrl
+            : null,
+        hasKey: apiKey.length > 0,
+        maskedKey: apiKey.length >= 4 ? `••••${apiKey.slice(-4)}` : null,
+      },
+    } as T;
+  }
+
   return {} as T;
 }
 

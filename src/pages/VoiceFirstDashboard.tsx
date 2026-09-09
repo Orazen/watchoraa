@@ -15,15 +15,18 @@ import type { VoiceState } from '../voice/VoiceAssistantProvider';
 export type DashboardTab = 'tracking' | 'journey' | 'sos' | 'routes' | 'community' | 'settings';
 
 /** Maps the real voice-assistant state to the orb visual. Hazard speech
- *  overrides everything (red orb) via the `hazardActive` flag from App. */
-function orbStateFor(voice: VoiceState, hazardActive: boolean, offline: boolean): OrbState {
-  if (offline) return 'error';
+ *  overrides everything (red orb) via the `hazardActive` flag from App.
+ *  Offline / permission-missing / unsupported are *availability* states, not
+ *  failures — a red "Voice error" orb alarmed blind users on devices without
+ *  SpeechRecognition, so they present as calm standing-by instead; the
+ *  dedicated banners and the permission centre explain what to do. */
+function orbStateFor(voice: VoiceState, hazardActive: boolean): OrbState {
   if (hazardActive) return 'hazard';
   switch (voice) {
     case 'listening': return 'listening';
     case 'processing': return 'processing';
     case 'speaking': return 'speaking';
-    case 'error': case 'permission-needed': case 'unsupported': return 'error';
+    case 'error': return 'error';
     default: return 'idle';
   }
 }
@@ -205,16 +208,11 @@ export function VoiceFirstDashboard({
   return (
     <div className="voice-dashboard">
       <header className="dashboard-head">
-        <div>
-          <p className="topbar-kicker">watchora · command centre</p>
-          <h2 id="dashboard-title" tabIndex={-1}>
-            Home
-          </h2>
-        </div>
+        <p className="topbar-kicker">Command centre</p>
         <div className="control-inline">
           {voiceState !== undefined && onOrbToggle ? (
             <WatchoraOrb
-              state={orbStateFor(voiceState, hazardActive, offline)}
+              state={orbStateFor(voiceState, hazardActive)}
               size={110}
               onClick={onOrbToggle}
             />
