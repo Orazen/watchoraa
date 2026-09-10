@@ -163,3 +163,22 @@ describe('v0.5 vision coaching + shopping commands', () => {
     expect(i.requiresConfirmation).toBe(false);
   });
 });
+
+describe('v0.6 instant local answers', () => {
+  it.each(['what time is it', "what's the time", 'Tell me the time', 'what is the current time'])(
+    'maps "%s" to what_time_is_it locally',
+    async (phrase) => {
+      const router = new CommandRouter({ aiParser: null });
+      const i = await router.route(phrase);
+      expect(i.intent).toBe('what_time_is_it');
+      expect(i.deterministic).toBe(true);
+      expect(i.requiresConfirmation).toBe(false);
+    },
+  );
+
+  it('answers the time even with no AI parser at all', async () => {
+    const router = new CommandRouter({ aiParser: null });
+    const i = await router.route('What time is it?');
+    expect(i.intent).toBe('what_time_is_it');
+  });
+});

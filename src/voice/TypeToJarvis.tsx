@@ -64,7 +64,7 @@ export function TypeToJarvis({ autoFocus = false }: { autoFocus?: boolean }) {
         </button>
       </div>
       <p id="type-jarvis-hint" className="soft-note" style={{ margin: 0 }}>
-        Try: where am i · list my places · what's reported near me · scan the barcode · find my wallet · tell me more · emergency
+        Try: where am i · what time is it · list my places · what's reported near me · scan the barcode · find my wallet · tell me more · emergency
       </p>
     </div>
   );

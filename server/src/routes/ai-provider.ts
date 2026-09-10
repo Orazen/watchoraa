@@ -26,6 +26,7 @@ const ALLOWED_BASE_HOSTS = new Set([
   'api.mistral.ai',
   'api.deepseek.com',
   'api.cerebras.ai',
+  'api.b.ai',
   // Common local/self-hosted endpoints (browser cannot reach these; a server
   // deployment next to the user's own machine can).
   'localhost',
@@ -119,7 +120,7 @@ aiProviderRouter.put(
         if (!ok) {
           response.status(400).json({
             error:
-              'Base URL must be https and point at a supported AI endpoint (api.openai.com, api.groq.com, openrouter.ai, api.together.xyz, api.mistral.ai, api.deepseek.com) or a private/self-hosted host.',
+              'Base URL must be https and point at a supported AI endpoint (api.openai.com, api.groq.com, openrouter.ai, api.together.xyz, api.mistral.ai, api.deepseek.com, api.cerebras.ai, api.b.ai) or a private/self-hosted host.',
           });
           return;
         }

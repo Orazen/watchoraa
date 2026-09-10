@@ -171,6 +171,12 @@ export function matchDeterministicCommand(transcript: string): VoiceIntent | nul
   if (has(t, 'where am i')) {
     return intent('where_am_i', {}, false, 0.95);
   }
+  // Instant local answer (clock): no network, no AI roundtrip.
+  // Checked after "where am i"; no earlier rule contains "time".
+  // Apostrophes normalize to a space, so both "what's" spellings are listed.
+  if (has(t, 'what time is it', 'what s the time', 'whats the time', 'what is the time', 'tell me the time', 'what time do you have', 'current time')) {
+    return intent('what_time_is_it', {}, false, 1);
+  }
 
   // ── Settings / permissions ──
   if (has(t, 'check my permissions', 'permission status', 'permission centre', 'open permission center', 'open permission centre')) {

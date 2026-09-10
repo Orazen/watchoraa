@@ -1223,6 +1223,13 @@ function MainApp({
           });
         break;
       }
+      case 'what_time_is_it': {
+        // Instant local clock answer: no network, no AI roundtrip — a blind
+        // user asking the time needs it immediately, even offline.
+        const spokenTime = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+        speak(`It is ${spokenTime}.`, 5, 'what-time');
+        break;
+      }
       case 'list_places': {
         tab('routes');
         // Spoken list (Soundscape pattern): places with distance + clock

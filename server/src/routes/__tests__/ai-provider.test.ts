@@ -61,6 +61,13 @@ describe('PUT /api/ai-provider', () => {
     expect(response.body.providerSettings.baseUrl).toBe('https://api.groq.com/v1');
   });
 
+  it('accepts the B.AI gateway as a base URL host', async () => {
+    const response = await authed('put', '/api/ai-provider')
+      .send({ provider: 'OPENAI_COMPATIBLE', apiKey: 'sk-test-1234567890abcdef', model: 'glm-5.3-flash', baseUrl: 'https://api.b.ai/v1/' });
+    expect(response.status).toBe(200);
+    expect(response.body.providerSettings.baseUrl).toBe('https://api.b.ai/v1');
+  });
+
   it('rejects a disallowed base URL host', async () => {
     const response = await authed('put', '/api/ai-provider')
       .send({ provider: 'OPENAI_COMPATIBLE', baseUrl: 'https://evil.example.com/v1' });

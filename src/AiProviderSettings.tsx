@@ -53,6 +53,15 @@ export const FREE_MODEL_PRESETS: Array<{
     keyUrl: 'https://cloud.cerebras.ai',
     keyHint: 'Create a free key at cloud.cerebras.ai, then paste it below.',
   },
+  {
+    id: 'b-ai',
+    label: 'B.AI — GLM & DeepSeek, vision',
+    provider: 'OPENAI_COMPATIBLE',
+    model: 'glm-5.3-flash',
+    baseUrl: 'https://api.b.ai/v1',
+    keyUrl: 'https://b.ai',
+    keyHint: 'Paste your B.AI key below. Vision models: glm-5.3-flash (128K context) and deepseek-v4-flash-vision-exp (1M context).',
+  },
 ];
 
 /**

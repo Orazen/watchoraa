@@ -6,6 +6,7 @@ export type VoiceIntentName =
   | 'read_text'
   | 'start_navigation'
   | 'where_am_i'
+  | 'what_time_is_it'
   | 'start_safe_journey'
   | 'stop_safe_journey'
   | 'check_journey'
@@ -111,7 +112,7 @@ export interface ConfirmationRequest {
 }
 
 export const HELP_MESSAGE =
-  'You can say: describe what is ahead, read this, what money is this, what color is this, read the expiry, scan the barcode, find my keys, tell me more, start a safe journey, emergency, or open settings.';
+  'You can say: describe what is ahead, read this, what money is this, what color is this, read the expiry, scan the barcode, what time is it, find my keys, tell me more, start a safe journey, emergency, or open settings.';
 
 /** Spoken once per session when hands-free voice control arms successfully. */
 export const HANDS_FREE_ONBOARDING =
