@@ -18,6 +18,7 @@ import { readingEntriesRouter } from './reading-entries.js';
 import { thingsRouter } from './things.js';
 import { ttsRouter } from './tts.js';
 import { safeJourneyRouter } from './safe-journey.js';
+import { sttRouter } from './stt.js';
 import { emergencyRouter } from './emergency.js';
 import { geocodeRouter, ipLocationRouter } from './geocode.js';
 
@@ -42,6 +43,7 @@ apiRouter.use('/consents', consentsRouter);
 apiRouter.use('/journeys', journeysRouter);
 apiRouter.use('/audit-logs', auditRouter);
 apiRouter.use('/tts', ttsRouter);
+apiRouter.use('/stt', sttRouter);
 apiRouter.use('/safe-journey', safeJourneyRouter);
 apiRouter.use('/emergency', emergencyRouter);
 apiRouter.use('/admin', adminRouter);

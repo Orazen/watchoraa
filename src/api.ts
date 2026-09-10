@@ -924,12 +924,34 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(input),
     }),
-  transcribe: (formData: FormData) =>
-    request<{ transcript: string; language_code?: string }>('/api/stt/transcribe', {
-      method: 'POST',
-      body: formData,
-      headers: {},
-    }),
+  /** Tap-to-dictate fallback: raw audio upload to the server's STT proxy.
+   *  Deliberately bypasses request() — a Blob body must keep its real
+   *  Content-Type (audio/*, the server routes on it), and provider failures
+   *  (502/503) must surface instead of silently hitting the offline demo. */
+  sttTranscribe: async (audio: Blob, language?: string) => {
+    const url = `${API_BASE_URL}/api/stt/transcribe${language ? `?language=${encodeURIComponent(language)}` : ''}`;
+    const send = () =>
+      fetch(url, {
+        method: 'POST',
+        headers: {
+          ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
+          'Content-Type': audio.type || 'audio/webm',
+        },
+        body: audio,
+      });
+    let res = await send();
+    if (res.status === 401) {
+      refreshing = refreshing ?? tryRefresh();
+      const ok = await refreshing;
+      refreshing = null;
+      if (ok) res = await send();
+    }
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new ApiError(typeof body.error === 'string' ? body.error : `Voice transcription failed (${res.status})`, res.status);
+    }
+    return (await res.json()) as { transcript: string; language?: string };
+  },
 };
 
 export { ApiError };

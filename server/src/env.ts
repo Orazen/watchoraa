@@ -17,6 +17,10 @@ const envSchema = z.object({
   AI_PROVIDER: z.enum(['GEMINI', 'OPENAI_COMPATIBLE']).default('OPENAI_COMPATIBLE'),
   AI_MODEL: z.string().optional(),
   AI_BASE_URL: z.string().optional(),
+  // Server-side speech-to-text fallback for voice dictation (see routes/stt.ts).
+  STT_API_KEY: z.string().optional(),
+  STT_BASE_URL: z.string().optional(),
+  STT_MODEL: z.string().optional(),
 });
 
 export const env = envSchema.parse(process.env);

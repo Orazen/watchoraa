@@ -125,9 +125,15 @@ export const HANDS_FREE_ONBOARDING =
 export const MIC_PERMISSION_REQUEST =
   'Watchora needs your microphone so you can control it by voice without touching the screen. Please allow the microphone when your browser asks.';
 
-/** Spoken when voice input can't work: the recognizer never actually starts
+/** Spoken when live listening can't work: the recognizer never actually starts
  *  (some embedded browsers expose the SpeechRecognition API but have no mic
  *  entitlement), no audio capture device answers, or the speech backend is
- *  unreachable. Honest failure: voice is off, typing still works. */
+ *  unreachable. Tap-to-dictate (record + server transcription) is the offered
+ *  fallback; typing still works too. */
 export const MIC_UNAVAILABLE_MESSAGE =
-  'Voice input is not working right now because your microphone or its speech service is not responding. You can still type commands in the text box on the home screen.';
+  'Live voice listening is not working in this browser. You can tap the voice orb and speak instead — Watchora will record your voice and transcribe it. You can also type commands in the text box on the home screen.';
+
+/** Spoken once per session when the server-side transcription service is
+ *  unreachable or not configured. Typing still works. */
+export const STT_UNAVAILABLE_MESSAGE =
+  'Voice transcription is not available right now. You can still type your command in the text box.';

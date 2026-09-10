@@ -15,7 +15,8 @@ import { matchDeterministicCommand } from './deterministicCommands';
 import { matchFeelingPhrase } from './companion';
 import { EMERGENCY_PRIORITY_INTENTS } from './voiceTypes';
 import { ConfirmationManager } from './confirmationManager';
-import { DEFAULT_VOICE_SETTINGS, isHandsFree, HANDS_FREE_ONBOARDING, MIC_PERMISSION_REQUEST, MIC_UNAVAILABLE_MESSAGE, type VoiceIntent, type VoiceSettings } from './voiceTypes';
+import { DEFAULT_VOICE_SETTINGS, isHandsFree, HANDS_FREE_ONBOARDING, MIC_PERMISSION_REQUEST, MIC_UNAVAILABLE_MESSAGE, STT_UNAVAILABLE_MESSAGE, type VoiceIntent, type VoiceSettings } from './voiceTypes';
+import { api as apiClient } from '../api';
 import { loadVoiceSettings, saveVoiceSettings } from './voiceSettingsStorage';
 import { decideHandsFreeAction } from './handsFreeSession';
 import { setRecentCommandContext } from './aiIntentParser';
@@ -110,6 +111,18 @@ const START_WATCHDOG_MS = 4_000;
  *  in a silent loop. */
 const MAX_CONSECUTIVE_FAILURES = 3;
 
+/** Tap-to-dictate fallback (server transcription): recording limits. */
+const DICTATION_MAX_MS = 20_000;
+/** Recordings smaller than this are treated as "nothing was heard". */
+const MIN_DICTATION_BYTES = 1_200;
+/** MediaRecorder mime candidates, best first. */
+const RECORDER_MIME_CANDIDATES = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg;codecs=opus'];
+
+function pickRecorderMime(): string | undefined {
+  if (typeof MediaRecorder === 'undefined') return undefined;
+  return RECORDER_MIME_CANDIDATES.find((m) => MediaRecorder.isTypeSupported(m));
+}
+
 export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, getVoiceSettings, aiParser, offline, onBargeIn, bridge }: VoiceAssistantProps) {
   const [state, setState] = useState<VoiceState>('idle');
   const [transcript, setTranscript] = useState('');
@@ -150,10 +163,25 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
   const recognizerStartedRef = useRef(false);
   const appliedLangRef = useRef<string | null>(null);
   const appliedWakeRef = useRef<boolean | null>(null);
+  // Tap-to-dictate (server STT fallback): MediaRecorder session state.
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const dictationStreamRef = useRef<MediaStream | null>(null);
+  const dictationChunksRef = useRef<Blob[]>([]);
+  const dictationActiveRef = useRef(false);
+  const dictationMimeRef = useRef('audio/webm');
+  const dictationStopTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sttUnavailableAnnouncedRef = useRef(false);
+  // Language hint lives in a ref so the dictation callbacks (captured once by
+  // memoized callers) always send the current setting.
+  const languageHintRef = useRef(settings.language);
+  // Indirection so dictation (defined before handleTranscript) reaches the
+  // latest transcript handler — same pattern as speakRef.
+  const routeTranscriptRef = useRef<((text: string) => Promise<void>) | null>(null);
 
   speakRef.current = speakProp;
   onCommandRef.current = onCommand;
   onBargeInRef.current = onBargeIn;
+  languageHintRef.current = settings.language;
 
   if (!routerRef.current) routerRef.current = new CommandRouter({ aiParser, offline: offline ?? false });
   if (!confirmRef.current) confirmRef.current = new ConfirmationManager();
@@ -205,6 +233,11 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
     if (!bridge) return;
     bridge.current.onSpeechChange = (speaking: boolean) => {
       speechActiveRef.current = speaking;
+      if (dictationActiveRef.current) {
+        // Tap-to-dictate owns the mic right now: no hands-free pause/resume
+        // churn, or a speech-end would restart recognition over the recording.
+        return;
+      }
       if (speaking) {
         // The mic would hear Watchora's own voice. Stop listening now;
         // it resumes after speech ends (RESUME_AFTER_SPEECH_MS).
@@ -245,6 +278,14 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
       clearRestartTimer();
       clearResumeTimer();
       clearStartWatchdog();
+      // Dictation teardown: null the transcript handler first so a late
+      // onstop can't fire a command after the app is gone.
+      routeTranscriptRef.current = null;
+      clearDictationTimer();
+      dictationActiveRef.current = false;
+      const recorder = mediaRecorderRef.current;
+      if (recorder && recorder.state !== 'inactive') recorder.stop();
+      dictationStreamRef.current?.getTracks().forEach((track) => track.stop());
     };
   }, []);
 
@@ -300,6 +341,147 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
       // Priority 6 (description level): a command answer (priority 5) must
       // always preempt or queue ahead of this notice — answers beat notices.
       speakRef.current(MIC_UNAVAILABLE_MESSAGE, 6, 'mic-unavailable');
+    }
+  }
+
+  function clearDictationTimer() {
+    if (dictationStopTimerRef.current != null) {
+      clearTimeout(dictationStopTimerRef.current);
+      dictationStopTimerRef.current = null;
+    }
+  }
+
+  function releaseDictationStream() {
+    dictationStreamRef.current?.getTracks().forEach((track) => track.stop());
+    dictationStreamRef.current = null;
+  }
+
+  /** Tear the recording session down without sending anything (error path). */
+  function cancelDictation() {
+    clearDictationTimer();
+    dictationActiveRef.current = false;
+    dictationChunksRef.current = [];
+    const recorder = mediaRecorderRef.current;
+    mediaRecorderRef.current = null;
+    releaseDictationStream();
+    if (recorder && recorder.state !== 'inactive') {
+      try { recorder.stop(); } catch { /* already dead */ }
+    }
+    setState('idle');
+  }
+
+  /** Tap-to-dictate: record with MediaRecorder, send the clip to the server's
+   *  /api/stt/transcribe endpoint (whisper), and route the transcript through
+   *  the same command brain as typed text. This is the input path that
+   *  actually works in embedded browsers whose SpeechRecognition backend
+   *  never connects. */
+  async function startDictation() {
+    if (dictationActiveRef.current) return;
+    const mime = pickRecorderMime();
+    if (!mime || !navigator.mediaDevices?.getUserMedia) {
+      setState('unsupported');
+      if (!unavailableAnnouncedRef.current) {
+        unavailableAnnouncedRef.current = true;
+        speakRef.current(MIC_UNAVAILABLE_MESSAGE, 6, 'mic-unavailable');
+      }
+      return;
+    }
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch {
+      permissionDeniedRef.current = true;
+      setMicPermission(false);
+      setState('permission-needed');
+      speakRef.current(MIC_PERMISSION_REQUEST, 5, 'mic-permission-request');
+      return;
+    }
+    dictationStreamRef.current = stream;
+    let recorder: MediaRecorder;
+    try {
+      recorder = new MediaRecorder(stream, { mimeType: mime });
+    } catch {
+      releaseDictationStream();
+      setState('unsupported');
+      return;
+    }
+    mediaRecorderRef.current = recorder;
+    dictationMimeRef.current = mime;
+    dictationChunksRef.current = [];
+    dictationActiveRef.current = true;
+    recorder.ondataavailable = (event) => {
+      if (event.data && event.data.size > 0) dictationChunksRef.current.push(event.data);
+    };
+    recorder.onstop = () => { void finishDictation(); };
+    recorder.onerror = () => { cancelDictation(); };
+    try {
+      recorder.start();
+    } catch {
+      dictationActiveRef.current = false;
+      mediaRecorderRef.current = null;
+      releaseDictationStream();
+      setState('error');
+      return;
+    }
+    // The mic must not hear Watchora's own voice: stop any speech now, and
+    // nothing new is spoken until the clip has been sent.
+    onBargeInRef.current?.();
+    setState('listening');
+    if ('vibrate' in navigator) navigator.vibrate([30, 40, 30]);
+    dictationStopTimerRef.current = setTimeout(() => {
+      dictationStopTimerRef.current = null;
+      if (dictationActiveRef.current) stopDictation();
+    }, DICTATION_MAX_MS);
+  }
+
+  /** User tapped again (or the 20s cap hit): stop recording and send. */
+  function stopDictation() {
+    clearDictationTimer();
+    const recorder = mediaRecorderRef.current;
+    if (!recorder || recorder.state === 'inactive') {
+      dictationActiveRef.current = false;
+      mediaRecorderRef.current = null;
+      releaseDictationStream();
+      setState('idle');
+      return;
+    }
+    recorder.stop(); // onstop → finishDictation
+  }
+
+  async function finishDictation() {
+    clearDictationTimer();
+    mediaRecorderRef.current = null;
+    releaseDictationStream();
+    if (!dictationActiveRef.current) return; // error path already cleaned up
+    dictationActiveRef.current = false;
+    const blob = new Blob(dictationChunksRef.current, { type: dictationMimeRef.current });
+    dictationChunksRef.current = [];
+    if (blob.size < MIN_DICTATION_BYTES) {
+      setState('idle');
+      speakRef.current("I didn't hear anything. Tap the orb and speak again, or type your command.", 5, 'dictation-empty');
+      return;
+    }
+    setState('processing');
+    try {
+      const result = await apiClient.sttTranscribe(blob, languageHintRef.current);
+      const text = result.transcript.trim();
+      if (!text) {
+        setState('idle');
+        speakRef.current("I didn't catch that. Tap the orb and speak again, or type your command.", 5, 'dictation-empty');
+        return;
+      }
+      setTranscript(text);
+      await routeTranscriptRef.current?.(text);
+    } catch {
+      // Server transcription unavailable (unconfigured or upstream error):
+      // say it once per session, then fall back to honest idle.
+      setState('idle');
+      if (!sttUnavailableAnnouncedRef.current) {
+        sttUnavailableAnnouncedRef.current = true;
+        speakRef.current(STT_UNAVAILABLE_MESSAGE, 6, 'stt-unavailable');
+      } else {
+        speakRef.current('Voice transcription failed. Please try again, or type your command.', 5, 'dictation-failed');
+      }
     }
   }
 
@@ -596,13 +778,14 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
     clearRestartTimer();
     restartTimerRef.current = setTimeout(() => {
       restartTimerRef.current = null;
-      if (!activeRef.current && handsFreeOnRef.current && !pausedByUserRef.current && !speechActiveRef.current && !permissionDeniedRef.current && !micUnavailableRef.current) {
+      if (!activeRef.current && !dictationActiveRef.current && handsFreeOnRef.current && !pausedByUserRef.current && !speechActiveRef.current && !permissionDeniedRef.current && !micUnavailableRef.current) {
         startHandsFree();
       }
     }, RESTART_DELAY_MS);
   }
 
   function resumeHandsFree() {
+    if (dictationActiveRef.current) return;
     pausedByUserRef.current = false;
     if (!handsFreeOnRef.current) return;
     if (speechActiveRef.current) return;
@@ -615,7 +798,7 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
   useEffect(() => {
     if (!supported || !handsFree || permissionDeniedRef.current) return;
     const tryStart = () => {
-      if (activeRef.current || !handsFreeOnRef.current) return;
+      if (activeRef.current || dictationActiveRef.current || !handsFreeOnRef.current) return;
       startHandsFree();
     };
     // Only install if recognition is not already running shortly after mount.
@@ -633,12 +816,23 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
   }, [supported, handsFree, startHandsFree]);
 
   const startListening = useCallback(() => {
+    if (dictationActiveRef.current) {
+      stopDictation(); // second tap sends the recording
+      return;
+    }
+    if (!supported || micUnavailableRef.current) {
+      // SpeechRecognition is a dud here (or already gave up honestly after
+      // its retries): fall back to tap-to-dictate, the path that actually
+      // works everywhere. Crucially, micUnavailableRef stays SET — clearing
+      // it here used to restart the dead recognizer loop on every tap.
+      void startDictation();
+      return;
+    }
     if (handsFreeOnRef.current) {
       // Resume the hands-free session. A tap is also a signal the user wants
       // voice control back, so clear earlier failures — the mic may have come
       // back (plugged in, permission granted in browser settings).
       permissionDeniedRef.current = false;
-      micUnavailableRef.current = false;
       consecutiveFailuresRef.current = 0;
       pausedByUserRef.current = false;
       // No optimistic state here: onstart flips the orb to listening, and the
@@ -716,7 +910,7 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
     } catch {
       handleDeadStart();
     }
-  }, [settings.language, startHandsFree, stopListening]);
+  }, [supported, settings.language, startHandsFree, stopListening]);
 
   const toggleListening = useCallback(() => {
     if (handsFreeOnRef.current) {
@@ -764,6 +958,10 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
     },
     [routeText],
   );
+
+  // Latest transcript handler for the dictation fallback (assigned every
+  // render, like speakRef) — dictation only holds the ref.
+  routeTranscriptRef.current = handleTranscript;
 
   // Auto-start hands-free on mount if it is the default mode. Deliberately
   // runs after children effects so App.tsx has registered the voice bridge.
