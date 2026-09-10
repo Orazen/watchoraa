@@ -111,10 +111,11 @@ describe('POST /api/ai/intent', () => {
     expect(response.body.intent).not.toBe('emergency');
   });
 
-  it('includes shopping in the safe allow-list but never cancel/safety intents', async () => {
+  it('includes shopping + general_question in the safe allow-list but never cancel/safety intents', async () => {
     // The shopping intent is in SAFE_AI_INTENTS; emergency-class intents are not.
     const { SAFE_AI_INTENTS } = await import('../../routes/ai') as unknown as { SAFE_AI_INTENTS: string[] };
     expect(SAFE_AI_INTENTS).toContain('shopping');
+    expect(SAFE_AI_INTENTS).toContain('general_question');
     expect(SAFE_AI_INTENTS).not.toContain('emergency');
     expect(SAFE_AI_INTENTS).not.toContain('cancel_emergency');
     expect(SAFE_AI_INTENTS).not.toContain('send_location');

@@ -133,6 +133,9 @@ export const SAFE_AI_INTENTS = [
   'identify_currency',
   'read_expiry',
   'help',
+  // Not an app command: the model answers general knowledge / everyday
+  // questions inline (parameters.answer) instead of leaving them "unknown".
+  'general_question',
 ];
 
 const INTENT_PROMPT = `You are the intent parser for Watchora, an assistive app for blind and low-vision people.
@@ -140,7 +143,8 @@ Parse the user's spoken command into a single JSON object:
 One command: {"intent": string, "parameters": {string: string|number|boolean}, "confidence": number, "requiresConfirmation": boolean}
 Several commands spoken in one breath: {"commands": [<one-command object>, ...]} — max 3, in spoken order.
 Allowed intents: ${SAFE_AI_INTENTS.join(', ')}.
-Never invent emergency, cancellation, or safety-critical intents. If the command is unsafe, unsupported, or unclear, return {"intent":"unknown","parameters":{},"confidence":0,"requiresConfirmation":false}.
+Never invent emergency, cancellation, or safety-critical intents. If the command is unsafe or unsupported, return {"intent":"unknown","parameters":{},"confidence":0,"requiresConfirmation":false}.
+If the command is a general knowledge or everyday question that none of the allowed intents cover (for example "what is the capital of France" or "how do I boil an egg"), answer it briefly as {"intent":"general_question","parameters":{"answer":"<1-3 short spoken-style sentences>"},"confidence":0.8,"requiresConfirmation":false}. You cannot see the user's surroundings here — never answer questions that need a camera; return unknown for those.
 When the command refers back to something with a pronoun ("there", "that place", "it again"), use the Recent context block to fill in the concrete parameters.
 Respond with ONLY the JSON object, no markdown.
 
@@ -150,6 +154,8 @@ User command: "open settings and save this place as home"
 Context: recent commands — the user asked to navigate to "Roma Termini".
 User command: "take me there again"
 → {"intent":"start_navigation","parameters":{"destination":"Roma Termini"},"confidence":0.85,"requiresConfirmation":false}
+User command: "what is the capital of France"
+→ {"intent":"general_question","parameters":{"answer":"The capital of France is Paris."},"confidence":0.9,"requiresConfirmation":false}
 User command: "call for help"
 → {"intent":"unknown","parameters":{},"confidence":0,"requiresConfirmation":false}`;
 

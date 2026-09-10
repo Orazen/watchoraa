@@ -297,7 +297,9 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
     setState('unsupported');
     if (!unavailableAnnouncedRef.current) {
       unavailableAnnouncedRef.current = true;
-      speakRef.current(MIC_UNAVAILABLE_MESSAGE, 5, 'mic-unavailable');
+      // Priority 6 (description level): a command answer (priority 5) must
+      // always preempt or queue ahead of this notice — answers beat notices.
+      speakRef.current(MIC_UNAVAILABLE_MESSAGE, 6, 'mic-unavailable');
     }
   }
 
@@ -327,6 +329,17 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
     });
   }, []);
 
+  /** A general-knowledge answer from the AI intent endpoint ("what is the
+   *  capital of France") arrives as intent 'general_question' with the spoken
+   *  answer in parameters.answer. Returns the trimmed answer, capped for TTS,
+   *  or null when the intent isn't one or no usable text came back. */
+  function generalAnswerText(intent: VoiceIntent): string | null {
+    if (intent.intent !== 'general_question') return null;
+    const raw = intent.parameters.answer;
+    const text = typeof raw === 'string' ? raw.trim() : '';
+    return text ? text.slice(0, 500) : null;
+  }
+
   /** Routes a final transcript through the router and executes it. */
   const runCommand = useCallback(
     async (text: string) => {
@@ -353,6 +366,14 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
       }
       if (intent.intent === 'unknown') {
         speakRef.current(LOW_CONFIDENCE_MESSAGE, 5);
+        setState('idle');
+        return;
+      }
+      // General questions get a real spoken answer from the same single AI
+      // round-trip that parses commands — never the canned help message.
+      const answer = generalAnswerText(intent);
+      if (answer) {
+        speakRef.current(answer, 5);
         setState('idle');
         return;
       }
@@ -729,6 +750,12 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
       const intent = await routeText(text);
       if (intent.intent === 'unknown') {
         speakRef.current(LOW_CONFIDENCE_MESSAGE, 5);
+        setState('idle');
+        return;
+      }
+      const answer = generalAnswerText(intent);
+      if (answer) {
+        speakRef.current(answer, 5);
         setState('idle');
         return;
       }

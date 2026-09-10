@@ -43,6 +43,9 @@ export type VoiceIntentName =
   | 'find_thing'
   | 'reports_near'
   | 'follow_up'
+  /** General knowledge / everyday question answered inline by the AI intent
+   *  endpoint (parameters.answer) — not an app command. */
+  | 'general_question'
   | 'unknown';
 
 export interface VoiceIntent {

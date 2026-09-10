@@ -23,6 +23,11 @@ const UNSUPPORTED_INTENTS: VoiceIntent['intent'][] = ['unknown'];
 export class CommandRouter {
   private aiParser: AiIntentParser | null;
   private offline: boolean;
+  /** In-flight AI parses keyed by normalized transcript: concurrent identical
+   *  submissions (double-tap Send, Enter+click in the same tick) share one
+   *  AI round-trip instead of paying for two. Settled entries are removed —
+   *  this is dedupe of concurrent work, not a result cache. */
+  private inflight = new Map<string, Promise<VoiceIntent>>();
 
   constructor(opts: RouterOptions = {}) {
     this.aiParser = opts.aiParser ?? null;
@@ -43,7 +48,15 @@ export class CommandRouter {
     if (!clean) {
       return { intent: 'unknown', parameters: {}, confidence: 0, requiresConfirmation: false, deterministic: false };
     }
+    const key = clean.toLowerCase();
+    const pending = this.inflight.get(key);
+    if (pending) return pending;
+    const run = this.routeUncached(clean).finally(() => this.inflight.delete(key));
+    this.inflight.set(key, run);
+    return run;
+  }
 
+  private async routeUncached(clean: string): Promise<VoiceIntent> {
     // 1. Deterministic (safety-critical) matching — always first, never skipped.
     const deterministic = matchDeterministicCommand(clean);
     if (deterministic) return deterministic;

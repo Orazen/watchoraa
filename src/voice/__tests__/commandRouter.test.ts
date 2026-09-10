@@ -182,3 +182,40 @@ describe('v0.6 instant local answers', () => {
     expect(i.intent).toBe('what_time_is_it');
   });
 });
+
+describe('single-flight AI parsing', () => {
+  it('coalesces concurrent identical submissions into one AI parse', async () => {
+    let calls = 0;
+    const router = new CommandRouter({
+      aiParser: {
+        async parseIntent() {
+          calls += 1;
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          return { intent: 'describe_scene', parameters: {}, confidence: 0.9, requiresConfirmation: false, deterministic: false };
+        },
+      },
+    });
+    const transcript = 'the sky is blue today'; // no deterministic match
+    const [a, b] = await Promise.all([router.route(transcript), router.route(transcript)]);
+    expect(calls).toBe(1);
+    expect(a.intent).toBe('describe_scene');
+    expect(b.intent).toBe('describe_scene');
+    // Dedupe covers concurrent work only — a later ask parses again.
+    await router.route(transcript);
+    expect(calls).toBe(2);
+  });
+
+  it('does not coalesce different transcripts', async () => {
+    let calls = 0;
+    const router = new CommandRouter({
+      aiParser: {
+        async parseIntent() {
+          calls += 1;
+          return { intent: 'describe_scene', parameters: {}, confidence: 0.9, requiresConfirmation: false, deterministic: false };
+        },
+      },
+    });
+    await Promise.all([router.route('the sky is blue today'), router.route('the grass is green today')]);
+    expect(calls).toBe(2);
+  });
+});

@@ -13,6 +13,9 @@ export function TypeToJarvis({ autoFocus = false }: { autoFocus?: boolean }) {
   const { handleTranscript, state, supported, micPermission } = useVoiceAssistant();
   const [value, setValue] = useState('');
   const [busy, setBusy] = useState(false);
+  // Ref guard closes the same-tick double-submit race (Enter keydown + Send
+  // click) that React state alone misses — one question, one AI round-trip.
+  const busyRef = useRef(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Autofocus when voice is unsupported/blocked — typing is the primary path then.
@@ -24,12 +27,14 @@ export function TypeToJarvis({ autoFocus = false }: { autoFocus?: boolean }) {
 
   async function submit() {
     const text = value.trim();
-    if (!text || busy) return;
+    if (!text || busyRef.current) return;
+    busyRef.current = true;
     setBusy(true);
     try {
       await handleTranscript(text);
       setValue('');
     } finally {
+      busyRef.current = false;
       setBusy(false);
       inputRef.current?.focus();
     }

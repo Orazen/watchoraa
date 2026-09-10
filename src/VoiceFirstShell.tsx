@@ -41,6 +41,10 @@ export function VoiceFirstShell({ bridge, children }: { bridge: { current: Voice
     () =>
       new BackendIntentParser(async (transcript: string) => {
         const context = getRecentCommandContext() || undefined;
+        // Latency diagnostics: when reading prod network traces, this shows
+        // which surface (typed bar, hands-free, retry) sent a transcript to
+        // the AI parser — devtools-only, never spoken.
+        console.debug('[watchora] ai-intent', transcript.slice(0, 80), new Error().stack?.split('\n').slice(2, 5).join(' <= '));
         const r = await import('./api').then((m) => m.api.aiIntent(transcript, context));
         if (!r || r.intent === 'unknown' || !r.intent) return null;
         const toSubIntent = (c: { intent: string; parameters: Record<string, string | number | boolean>; confidence: number; requiresConfirmation: boolean }): VoiceIntent => ({
