@@ -98,6 +98,12 @@ type AiResult = {
 
 const ANALYSIS_TIMEOUT_MS = 20_000;
 
+// One-tap audio unlock payload: a 60 ms silent WAV played from inside a real
+// user gesture. iOS/Safari/WebView autoplay policy then keeps this single
+// persistent <audio> element unlocked for every later programmatic play
+// (swapping .src does not re-lock it), which is what makes neural TTS audible.
+const SILENT_WAV_DATA_URI = 'data:audio/wav;base64,UklGRuQDAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YcADAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
+
 const analysisModes: Array<{ key: AnalysisMode; label: string }> = [
   { key: 'navigation', label: 'Navigation' },
   { key: 'environment', label: 'Environment' },
@@ -463,6 +469,11 @@ function MainApp({
   const analysisAbortRef = useRef<AbortController | null>(null);
   const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
   const ttsUrlRef = useRef<string | null>(null);
+  // Persistent, gesture-unlocked audio element. Created once; every TTS play
+  // reuses it so the browser's autoplay policy never blocks playback after
+  // the initial user gesture unlocked it.
+  const ttsElementRef = useRef<HTMLAudioElement | null>(null);
+  const ttsUnlockRef = useRef(false);
   const speakSeqRef = useRef(0);
   // Active barcode scan (so a new scan stops the previous loop).
   const productScanRef = useRef<ScanHandle | null>(null);
@@ -482,6 +493,19 @@ function MainApp({
     voiceBridge.current.onSpeechChange?.(speechActiveCountRef.current > 0);
   }
 
+  // Reuse ONE audio element for every utterance. A fresh `new Audio()` created
+  // after an async TTS fetch is never gesture-bound, so iOS/Safari/WebView
+  // autoplay policy rejects play() and the user hears nothing. The unlock
+  // effect below plays this element once inside a real user gesture; after
+  // that, swapping .src on it stays unlocked for the session.
+  function getTtsElement(): HTMLAudioElement {
+    if (!ttsElementRef.current) {
+      ttsElementRef.current = new Audio();
+      ttsElementRef.current.preload = 'auto';
+    }
+    return ttsElementRef.current;
+  }
+
   // Priority-aware speech: danger/emergency interrupts anything lower.
   // voice/voiceRate live in refs so the once-created manager never speaks with
   // stale settings — settings changes must apply to the very next utterance.
@@ -494,14 +518,15 @@ function MainApp({
           const locale = localeFromVoice(voiceRef.current);
           const effectiveRate = customRate ?? voiceRateRef.current;
           api
-            .ttsAudioUrl(t, voice, effectiveRate)
+            .ttsAudioUrl(t, voiceRef.current, effectiveRate)
             .then((url) => {
               if (seq !== speakSeqRef.current) {
                 URL.revokeObjectURL(url);
                 return;
               }
               ttsUrlRef.current = url;
-              const audio = new Audio(url);
+              const audio = getTtsElement();
+              audio.src = url;
               ttsAudioRef.current = audio;
               audio.playbackRate = 1.0;
               // Recognition must pause while we talk: the mic would hear our
@@ -701,7 +726,7 @@ function MainApp({
     window.speechSynthesis.cancel();
 
     const voices = window.speechSynthesis.getVoices() || [];
-    const isMale = voice.toLowerCase().includes('guy') || voice.toLowerCase().includes('ryan') || voice.toLowerCase().includes('prabhat') || voice.toLowerCase().includes('madhur') || voice.toLowerCase().includes('valluvar') || voice.toLowerCase().includes('mohan') || voice.toLowerCase().includes('gagan') || voice.toLowerCase().includes('midhun') || voice.toLowerCase().includes('bashkar') || voice.toLowerCase().includes('alvaro') || voice.toLowerCase().includes('katja');
+    const isMale = voiceRef.current.toLowerCase().includes('guy') || voiceRef.current.toLowerCase().includes('ryan') || voiceRef.current.toLowerCase().includes('prabhat') || voiceRef.current.toLowerCase().includes('madhur') || voiceRef.current.toLowerCase().includes('valluvar') || voiceRef.current.toLowerCase().includes('mohan') || voiceRef.current.toLowerCase().includes('gagan') || voiceRef.current.toLowerCase().includes('midhun') || voiceRef.current.toLowerCase().includes('bashkar') || voiceRef.current.toLowerCase().includes('alvaro') || voiceRef.current.toLowerCase().includes('katja');
     const langPrefix = (locale || 'en').split('-')[0].toLowerCase();
     const langVoices = voices.filter((v) => v.lang.toLowerCase().startsWith(langPrefix));
 
@@ -718,7 +743,7 @@ function MainApp({
       }) || langVoices[0];
       effectiveLang = chosenVoice.lang || locale || 'en-US';
     } else {
-      textToSpeak = getPhoneticFallback(text, voice);
+      textToSpeak = getPhoneticFallback(text, voiceRef.current);
       chosenVoice =
         voices.find((v) => v.lang.toLowerCase().startsWith('en-in') || v.lang.toLowerCase().includes('in')) ||
         voices.find((v) => {
@@ -733,7 +758,7 @@ function MainApp({
     }
 
     const utterance = new SpeechSynthesisUtterance(textToSpeak);
-    utterance.rate = Math.max(0.5, Math.min(2.0, rate ?? voiceRate));
+    utterance.rate = Math.max(0.5, Math.min(2.0, rate ?? voiceRateRef.current));
     utterance.pitch = 1;
     utterance.lang = effectiveLang;
     if (chosenVoice) utterance.voice = chosenVoice;
@@ -801,6 +826,42 @@ function MainApp({
     speechActiveCountRef.current = 0;
     voiceBridge.current.onSpeechChange?.(false);
   }
+
+  // Autoplay-policy unlock: iOS/Safari/in-app WebViews refuse programmatic
+  // audio.play() unless a real user gesture has already played audio. Play
+  // the persistent element once (a 60 ms silent WAV) inside the first
+  // pointer/key gesture; from then on it stays unlocked for every later TTS
+  // utterance, including ones created after async network fetches.
+  useEffect(() => {
+    const unlock = () => {
+      if (ttsUnlockRef.current) return;
+      const el = getTtsElement();
+      if (!el.paused && el.src) return; // already talking — don't interrupt
+      el.src = SILENT_WAV_DATA_URI;
+      el.play()
+        .then(() => {
+          ttsUnlockRef.current = true;
+          el.pause();
+        })
+        .catch(() => {
+          // Not treated as a qualifying gesture (or policy quirk); the next
+          // genuine gesture retries.
+        });
+    };
+    window.addEventListener('pointerdown', unlock, { capture: true });
+    window.addEventListener('touchend', unlock, { capture: true });
+    window.addEventListener('keydown', unlock, { capture: true });
+    return () => {
+      window.removeEventListener('pointerdown', unlock, { capture: true });
+      window.removeEventListener('touchend', unlock, { capture: true });
+      window.removeEventListener('keydown', unlock, { capture: true });
+      if (ttsElementRef.current) {
+        ttsElementRef.current.pause();
+        ttsElementRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function announce(message: string, tone: Tone = 'online') {
     setStatusMessage(message);
