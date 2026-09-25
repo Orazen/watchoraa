@@ -1,0 +1,101 @@
+/* Watchora design tokens — reUI/shadcn token architecture over the Watchora
+ * identity (cream canvas, ink borders, forest primary, lavender/ember accents).
+ *
+ * Deliberate NO-PREFLIGHT import: legacy styles.css keeps governing the
+ * un-migrated screens, so Tailwind ships only its theme + utility layers here.
+ * Screen files migrating to the component kit consume these tokens via
+ * utilities (bg-card, text-foreground, ring-ring, …) and the kit in
+ * src/components/ui/. */
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities);
+
+/* Dark mode follows the app's existing .theme-dark container class
+ * (styles.css drives it via body:has(.theme-dark)) instead of a media query,
+ * so both styling systems flip together. */
+@custom-variant dark (&:where(.theme-dark, .theme-dark *));
+
+:root {
+  --background: #ffffeb;
+  --foreground: #1a1a1a;
+  --card: #fffef8;
+  --card-foreground: #1a1a1a;
+  --muted: #f2f0dd;
+  --muted-foreground: #57544a;
+  --primary: #034f46;
+  --primary-foreground: #ffffeb;
+  --secondary: #f0d7ff;
+  --secondary-foreground: #38204a;
+  --accent: #ffa946;
+  --accent-foreground: #40230a;
+  --destructive: #b3261e;
+  --destructive-foreground: #fff3ef;
+  --success: #036c4e;
+  --success-foreground: #e8fff6;
+  --warning: #8a5a00;
+  --warning-foreground: #fff7e0;
+  --info: #1c4e8a;
+  --info-foreground: #e9f2ff;
+  --border: #1a1a1a;
+  --input: #1a1a1a;
+  --ring: #034f46;
+  --radius: 0.75rem;
+}
+
+.theme-dark {
+  --background: #161613;
+  --foreground: #f0eee0;
+  --card: #201f19;
+  --card-foreground: #f0eee0;
+  --muted: #2a2921;
+  --muted-foreground: #aaa695;
+  --primary: #7adcc5;
+  --primary-foreground: #052420;
+  --secondary: #452f5c;
+  --secondary-foreground: #f0d7ff;
+  --accent: #ffb766;
+  --accent-foreground: #331d05;
+  --destructive: #ff8a7a;
+  --destructive-foreground: #2b0603;
+  --success: #5fd6ab;
+  --success-foreground: #04231a;
+  --warning: #ffce7a;
+  --warning-foreground: #2b1c02;
+  --info: #8ab8f0;
+  --info-foreground: #0a1f38;
+  --border: #a9a593;
+  --input: #a9a593;
+  --ring: #7adcc5;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --radius-md: calc(var(--radius) - 0.25rem);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 0.25rem);
+
+  --font-sans: 'Figtree', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'EB Garamond', ui-serif, Georgia, serif;
+}

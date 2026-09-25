@@ -7,17 +7,6 @@ const TOKEN_KEY = 'watchora_token';
 const REFRESH_KEY = 'watchora_refresh';
 const USER_CACHE_KEY = 'watchora_user';
 
-/**
- * Demo mode is an EXPLICIT build/run choice (VITE_DEMO_MODE=true, or toggled
- * at runtime for local demos). Only demo builds may serve fabricated data;
- * production builds must fail honestly instead of pretending a request
- * succeeded — a blind user must never be told a feature worked when it
- * didn't.
- */
-export const DEMO_MODE =
-  import.meta.env.VITE_DEMO_MODE === 'true' ||
-  (typeof localStorage !== 'undefined' && localStorage.getItem('watchora_demo_mode') === 'true');
-
 export type PublicUser = {
   id: string;
   email: string;
@@ -356,21 +345,6 @@ async function tryRefresh(): Promise<boolean> {
   }
 }
 
-const DEMO_ACCOUNTS: Record<string, { user: PublicUser; password: string }> = {
-  'admin@watchora.app': {
-    user: { id: 'usr_admin', email: 'admin@watchora.app', fullName: 'Admin User', role: 'ADMIN', preferredLanguage: 'en' },
-    password: 'AdminPass123!',
-  },
-  'user@watchora.app': {
-    user: { id: 'usr_normal', email: 'user@watchora.app', fullName: 'Suhasita Rani', role: 'BLIND_USER', preferredLanguage: 'en' },
-    password: 'UserPass123!',
-  },
-  'caregiver@watchora.app': {
-    user: { id: 'usr_care', email: 'caregiver@watchora.app', fullName: 'Caregiver User', role: 'CAREGIVER', preferredLanguage: 'en' },
-    password: 'CarePass123!',
-  },
-};
-
 function handleOfflineFallback<T>(path: string, options: RequestInit = {}): T {
   const method = (options.method || 'GET').toUpperCase();
   const bodyText = typeof options.body === 'string' ? options.body : '{}';
@@ -395,7 +369,7 @@ function handleOfflineFallback<T>(path: string, options: RequestInit = {}): T {
   if (path === '/api/preferences') {
     // Preferences are genuinely stored locally; serving them offline is honest.
     if (method === 'GET') {
-      const stored = localStorage.getItem('watchora_demo_prefs');
+      const stored = localStorage.getItem('watchora_prefs_cache');
       const preferences = stored
         ? JSON.parse(stored)
         : {
@@ -415,230 +389,26 @@ function handleOfflineFallback<T>(path: string, options: RequestInit = {}): T {
     }
     const current = handleOfflineFallback<{ preferences: any }>('/api/preferences').preferences;
     const updated = { ...current, ...body };
-    localStorage.setItem('watchora_demo_prefs', JSON.stringify(updated));
+    localStorage.setItem('watchora_prefs_cache', JSON.stringify(updated));
     return { preferences: updated } as T;
   }
   if (path === '/api/tts/voices') {
     // Static voice catalog bundled with the app — config, not user data.
-    return handleDemoVoices<T>();
+    return bundledVoiceCatalog<T>();
   }
 
-  // ── Everything else: fabricated data is ONLY available in explicit demo builds ──
-  if (!DEMO_MODE) {
-    throw new ApiError(
-      navigator.onLine === false
-        ? 'You are offline. This action needs a connection — it will work again when you reconnect.'
-        : 'The Watchora service is not reachable right now. Please try again shortly.',
-      503,
-    );
-  }
-
-  if (path === '/api/auth/login') {
-    // Demo mode serves ONLY the three published demo accounts — never an
-    // inferred role for arbitrary emails (same contract as the Vercel demo fn).
-    const email = (body.email || '').trim().toLowerCase();
-    const password = (body.password || '').trim();
-    const match = DEMO_ACCOUNTS[email];
-    if (match && match.password === password) {
-      setSession(`demo-token-${match.user.role.toLowerCase()}`, `demo-refresh-${match.user.role.toLowerCase()}`);
-      setCachedUser(match.user);
-      return { token: `demo-token-${match.user.role.toLowerCase()}`, refreshToken: 'demo-refresh', user: match.user } as T;
-    }
-    throw new ApiError('Incorrect email or password', 401);
-  }
-
-  if (path === '/api/auth/signup') {
-    const user: PublicUser = {
-      id: `usr_${Date.now()}`,
-      email: body.email || 'user@watchora.app',
-      fullName: body.fullName || (body.email ? body.email.split('@')[0] : 'User'),
-      role: 'BLIND_USER',
-      preferredLanguage: 'en',
-    };
-    setSession('demo-token', 'demo-refresh');
-    setCachedUser(user);
-    return { token: 'demo-token', refreshToken: 'demo-refresh', user } as T;
-  }
-
-  if (path === '/api/auth/reset-password') {
-    const user = getCachedUser() || DEMO_ACCOUNTS['user@watchora.app'].user;
-    setSession('demo-token', 'demo-refresh');
-    return { ok: true, token: 'demo-token', refreshToken: 'demo-refresh', user } as T;
-  }
-
-  if (path === '/api/contacts') {
-    if (method === 'GET') {
-      const contacts = JSON.parse(localStorage.getItem('watchora_demo_contacts') || '[]');
-      return { contacts } as T;
-    }
-    const contacts = JSON.parse(localStorage.getItem('watchora_demo_contacts') || '[]');
-    const newContact: TrustedContact = {
-      id: `cnt_${Date.now()}`,
-      name: body.name || 'Contact',
-      relationship: body.relationship || null,
-      phone: body.phone || null,
-      email: body.email || null,
-      canReceiveAlerts: Boolean(body.canReceiveAlerts),
-      canSeeLocation: Boolean(body.canSeeLocation),
-      canManageSettings: Boolean(body.canManageSettings),
-    };
-    contacts.push(newContact);
-    localStorage.setItem('watchora_demo_contacts', JSON.stringify(contacts));
-    return { contact: newContact } as T;
-  }
-
-  if (path.startsWith('/api/contacts/')) {
-    const id = path.split('/')[3];
-    const contacts: TrustedContact[] = JSON.parse(localStorage.getItem('watchora_demo_contacts') || '[]');
-    if (method === 'DELETE') {
-      const filtered = contacts.filter((c) => c.id !== id);
-      localStorage.setItem('watchora_demo_contacts', JSON.stringify(filtered));
-      return undefined as T;
-    }
-    const target = contacts.find((c) => c.id === id);
-    if (target) {
-      Object.assign(target, body);
-      localStorage.setItem('watchora_demo_contacts', JSON.stringify(contacts));
-      return { contact: target } as T;
-    }
-    return undefined as T;
-  }
-
-  if (path === '/api/places') {
-    if (method === 'GET') {
-      const places = JSON.parse(localStorage.getItem('watchora_demo_places') || '[]');
-      return { places } as T;
-    }
-    const places = JSON.parse(localStorage.getItem('watchora_demo_places') || '[]');
-    const newPlace: SavedPlace = {
-      id: `plc_${Date.now()}`,
-      label: body.label || 'Saved Place',
-      notes: body.notes || null,
-      address: body.address || null,
-      latitude: body.latitude || null,
-      longitude: body.longitude || null,
-      createdAt: new Date().toISOString(),
-    };
-    places.push(newPlace);
-    localStorage.setItem('watchora_demo_places', JSON.stringify(places));
-    return { place: newPlace } as T;
-  }
-
-  if (path.startsWith('/api/places/')) {
-    const id = path.split('/')[3];
-    const places: SavedPlace[] = JSON.parse(localStorage.getItem('watchora_demo_places') || '[]');
-    const filtered = places.filter((p) => p.id !== id);
-    localStorage.setItem('watchora_demo_places', JSON.stringify(filtered));
-    return undefined as T;
-  }
-
-  if (path === '/api/incidents') {
-    if (method === 'GET') {
-      const incidents = JSON.parse(localStorage.getItem('watchora_demo_incidents') || '[]');
-      return { incidents } as T;
-    }
-    const incidents = JSON.parse(localStorage.getItem('watchora_demo_incidents') || '[]');
-    const newIncident: IncidentReport = {
-      id: `inc_${Date.now()}`,
-      category: body.category || 'General',
-      description: body.description || '',
-      severity: body.severity || 'MEDIUM',
-      createdAt: new Date().toISOString(),
-      reporter: { fullName: getCachedUser()?.fullName || 'User' },
-    };
-    incidents.push(newIncident);
-    localStorage.setItem('watchora_demo_incidents', JSON.stringify(incidents));
-    return { incident: newIncident } as T;
-  }
-
-  if (path === '/api/reading-entries') {
-    if (method === 'GET') {
-      const entries = JSON.parse(localStorage.getItem('watchora_demo_reading') || '[]');
-      return { entries } as T;
-    }
-    const entries = JSON.parse(localStorage.getItem('watchora_demo_reading') || '[]');
-    const newEntry: ReadingEntry = {
-      id: `rd_${Date.now()}`,
-      source: body.source || 'Camera',
-      extractedText: body.extractedText || '',
-      language: body.language || 'en',
-      createdAt: new Date().toISOString(),
-    };
-    entries.push(newEntry);
-    localStorage.setItem('watchora_demo_reading', JSON.stringify(entries));
-    return { entry: newEntry } as T;
-  }
-
-  if (path === '/api/admin/users') {
-    return {
-      users: [
-        { id: 'usr_admin', email: 'admin@watchora.app', fullName: 'Admin User', role: 'ADMIN', isActive: true, createdAt: new Date().toISOString() },
-        { id: 'usr_normal', email: 'user@watchora.app', fullName: 'Suhasita Rani', role: 'BLIND_USER', isActive: true, createdAt: new Date().toISOString() },
-        { id: 'usr_care', email: 'caregiver@watchora.app', fullName: 'Caregiver User', role: 'CAREGIVER', isActive: true, createdAt: new Date().toISOString() },
-      ],
-    } as T;
-  }
-
-  if (path === '/api/admin/ai-stats') {
-    return {
-      total: 36,
-      successCount: 36,
-      failureCount: 0,
-      demoCount: 6,
-      liveCount: 30,
-      averageLatencyMs: 240,
-      byMode: [
-        { mode: 'NAVIGATION', count: 18 },
-        { mode: 'READING', count: 12 },
-        { mode: 'ENVIRONMENT', count: 6 },
-      ],
-      recentErrors: [],
-    } as T;
-  }
-
-  if (path === '/api/admin/prompts') return { prompts: [] } as T;
-  if (path === '/api/admin/incidents') return { incidents: [] } as T;
-  if (path === '/api/admin/assistance') return { requests: [] } as T;
-  if (path.startsWith('/api/audit-logs')) return { logs: [] } as T;
-  if (path === '/api/caregiver/overview') return { peopleCount: 1, openSosCount: 0, recentJourneys: [], contacts: [] } as T;
-  if (path === '/api/safe-journey/active') return { journey: null } as T;
-  if (path === '/api/emergency/active') return { session: null } as T;
-  if (path === '/api/ai/intent') {
-    return { intent: 'navigate', parameters: {}, confidence: 0.95, requiresConfirmation: false } as T;
-  }
-
-  if (path === '/api/ai-provider') {
-    // Demo echo of the BYO-provider settings endpoint. Reads always succeed;
-    // writes are echoed back with the key masked — a demo build never stores
-    // real credentials, matching the server's maskedKey-only contract.
-    const defaultSettings = {
-      provider: 'GEMINI' as const,
-      model: null,
-      baseUrl: null,
-      hasKey: false,
-      maskedKey: null,
-    };
-    if (method === 'GET') return { providerSettings: defaultSettings } as T;
-    if (method === 'DELETE') return { ok: true, providerSettings: defaultSettings } as T;
-    const apiKey = typeof body.apiKey === 'string' ? body.apiKey.trim() : '';
-    return {
-      providerSettings: {
-        provider: body.provider === 'OPENAI_COMPATIBLE' ? 'OPENAI_COMPATIBLE' : 'GEMINI',
-        model: typeof body.model === 'string' && body.model ? body.model : null,
-        baseUrl:
-          body.provider === 'OPENAI_COMPATIBLE' && typeof body.baseUrl === 'string' && body.baseUrl
-            ? body.baseUrl
-            : null,
-        hasKey: apiKey.length > 0,
-        maskedKey: apiKey.length >= 4 ? `••••${apiKey.slice(-4)}` : null,
-      },
-    } as T;
-  }
-
-  return {} as T;
+  // Everything else needs the real service. Fail honestly — a blind user
+  // must never be told a feature worked when it didn't.
+  throw new ApiError(
+    navigator.onLine === false
+      ? 'You are offline. This action needs a connection — it will work again when you reconnect.'
+      : 'The Watchora service is not reachable right now. Please try again shortly.',
+    503,
+  );
 }
 
-function handleDemoVoices<T>(): T {
+/** Static voice catalog bundled with the app — config data, not user data; honest to serve offline. */
+function bundledVoiceCatalog<T>(): T {
   const list: TtsVoice[] = [
       { shortName: 'en-US-JennyNeural', locale: 'en-US', language: 'English (US)', native: 'English (US)', gender: 'Female' },
       { shortName: 'en-US-GuyNeural', locale: 'en-US', language: 'English (US)', native: 'English (US)', gender: 'Male' },
@@ -952,6 +722,17 @@ export const api = {
     }
     return (await res.json()) as { transcript: string; language?: string };
   },
+
+  /** AI-powered full-text OCR: verbatim extraction through the same vision
+   *  provider chain as /api/ai/generate, but with a reading-order plain-text
+   *  contract instead of a scene-summary shape. 503 (no key configured) and
+   *  502 (provider down) surface to the caller, which falls back to the
+   *  general reading path — never fabricated text. */
+  ocrRead: (imageDataUrl: string, language?: string) =>
+    request<{ text: string; source: 'user' | 'server' }>('/api/ocr/read', {
+      method: 'POST',
+      body: JSON.stringify({ imageDataUrl, language }),
+    }),
 };
 
 export { ApiError };

@@ -1,14 +1,41 @@
-// Voice-first dashboard (v0.4): current status at top, large primary action
-// cards, a persistent voice button, and the emergency control always in reach.
+// Voice-first dashboard (v0.5): calm instrument panel rebuilt on the Watchora
+// UI kit (src/components/ui) + Tailwind token utilities from src/theme.css.
+// A single max-w-3xl column: header with kicker + orb, a two-column status
+// strip, the live-location card, large primary actions, and quick secondary
+// navigation. All behaviour from v0.4 — props signature, state, effects,
+// handlers, emergency wiring, and every spoken/visible string — is preserved
+// verbatim; this is a visual/layout redesign only.
 
-import { useEffect, useRef, useState } from 'react';
-import { PrimaryActionCard, StatusBanner } from '../components/PrimaryActionCard';
+import { useEffect, useRef, useState, type ComponentType } from 'react';
+import {
+  BookOpen,
+  CheckCircle2,
+  Map as MapIcon,
+  MapPin,
+  Mic,
+  Settings as SettingsIcon,
+  Shield,
+  ShieldCheck,
+  Siren,
+  Users,
+} from 'lucide-react';
 import { EmergencyControl, type EmergencyStatus } from '../components/EmergencyControl';
 import { PermissionStatusCard } from '../permissions/PermissionStatusCard';
 import { VoiceControlButton } from '../voice/VoiceControlButton';
 import { TypeToJarvis } from '../voice/TypeToJarvis';
 import { WatchoraOrb, type OrbState } from '../components/WatchoraOrb';
 import { MapView } from '../MapView';
+import {
+  Alert,
+  Badge,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  type BadgeProps,
+} from '../components/ui';
 import type { PermissionService } from '../permissions/permissionService';
 import type { VoiceState } from '../voice/VoiceAssistantProvider';
 
@@ -29,6 +56,77 @@ function orbStateFor(voice: VoiceState, hazardActive: boolean): OrbState {
     case 'error': return 'error';
     default: return 'idle';
   }
+}
+
+/** PrimaryActionCard's stateTone mapped onto kit Badge tones. */
+const STATE_TONE_TO_BADGE: Record<'ok' | 'warn' | 'danger' | 'neutral', NonNullable<BadgeProps['tone']>> = {
+  ok: 'success',
+  warn: 'warning',
+  danger: 'danger',
+  neutral: 'neutral',
+};
+
+/** Dashboard primary action card: the legacy PrimaryActionCard rebuilt inline
+ *  with kit Card + Button. The accessible name (aria-label), title,
+ *  explanation, button label, voice hint, and live-region state line are
+ *  byte-for-byte the originals — only the presentation changed. */
+function DashboardActionCard({
+  icon: Icon,
+  title,
+  explanation,
+  buttonLabel,
+  onActivate,
+  voiceHint,
+  state,
+  stateTone = 'neutral',
+  buttonVariant = 'primary',
+}: {
+  icon: ComponentType<{ className?: string }>;
+  title: string;
+  explanation: string;
+  buttonLabel: string;
+  onActivate: () => void;
+  voiceHint?: string;
+  state?: string;
+  stateTone?: 'ok' | 'warn' | 'danger' | 'neutral';
+  buttonVariant?: 'primary' | 'destructive';
+}) {
+  return (
+    <Card role="article" aria-label={title} className="flex flex-col">
+      <CardHeader>
+        <div className="flex items-start gap-3">
+          <span
+            className="flex size-11 shrink-0 items-center justify-center rounded-lg border-2 border-foreground/90 bg-muted text-foreground"
+            aria-hidden="true"
+          >
+            <Icon className="size-6" />
+          </span>
+          <div className="min-w-0">
+            <CardTitle className="text-2xl">{title}</CardTitle>
+            <CardDescription className="mt-1 text-base leading-relaxed">{explanation}</CardDescription>
+          </div>
+        </div>
+      </CardHeader>
+      {state && (
+        <CardContent className="p-0 px-5 pb-3">
+          <p aria-live="polite">
+            <Badge tone={STATE_TONE_TO_BADGE[stateTone]}>{state}</Badge>
+          </p>
+        </CardContent>
+      )}
+      <CardContent className="mt-auto flex flex-col gap-2 p-5 pt-0">
+        <Button variant={buttonVariant} size="xl" className="w-full" onClick={onActivate}>
+          {buttonLabel}
+        </Button>
+        {voiceHint && (
+          <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+            <Mic className="size-4" aria-hidden="true" />
+            Say: “{voiceHint}”
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 /** Live Location card: continuous GPS watch with map, accuracy ring, and a
@@ -139,35 +237,44 @@ function LiveLocationCard({
         : 'Finding your position…';
 
   return (
-    <div className="status-card live-location-card" role="region" aria-label="Live location">
-      <div className="status-card-head">
-        <span className="status-icon" aria-hidden="true">📍</span>
-        <div>
-          <h3>Live location</h3>
-          <p className="status-line" aria-live="polite">{summary}</p>
+    <Card role="region" aria-label="Live location">
+      <CardHeader>
+        <div className="flex items-start gap-3">
+          <span
+            className="flex size-11 shrink-0 items-center justify-center rounded-lg border-2 border-foreground/90 bg-muted text-foreground"
+            aria-hidden="true"
+          >
+            <MapPin className="size-6" />
+          </span>
+          <div className="min-w-0">
+            <CardTitle className="text-xl">Live location</CardTitle>
+            <p className="mt-1 text-base leading-relaxed" aria-live="polite">{summary}</p>
+          </div>
         </div>
-      </div>
+      </CardHeader>
       {/* The map is always visible on Home — even before any fix arrives. */}
-      <MapView
-        userLat={pos?.lat ?? null}
-        userLng={pos?.lng ?? null}
-        accuracyMeters={approximate ? undefined : pos?.accuracy ?? undefined}
-        markers={markers}
-        height="240px"
-        zoom={17}
-        showCompass={false}
-      />
-      <div className="control-inline" style={{ marginTop: 10 }}>
-        {approximate && (
-          <button className="ghost-btn" onClick={enablePreciseLocation}>
-            Enable precise location
-          </button>
-        )}
-        <button className="ghost-btn" onClick={onOpenJourney}>
-          Start a monitored Safe Journey with this location
-        </button>
-      </div>
-    </div>
+      <CardContent className="pt-0">
+        <MapView
+          userLat={pos?.lat ?? null}
+          userLng={pos?.lng ?? null}
+          accuracyMeters={approximate ? undefined : pos?.accuracy ?? undefined}
+          markers={markers}
+          height="240px"
+          zoom={17}
+          showCompass={false}
+        />
+        <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+          {approximate && (
+            <Button variant="ghost" size="lg" className="w-full sm:w-auto" onClick={enablePreciseLocation}>
+              Enable precise location
+            </Button>
+          )}
+          <Button variant="primary" size="lg" className="w-full sm:w-auto" onClick={onOpenJourney}>
+            Start a monitored Safe Journey with this location
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -206,10 +313,10 @@ export function VoiceFirstDashboard({
   speak: (text: string, priority?: number, dedupeKey?: string) => void;
 }) {
   return (
-    <div className="voice-dashboard">
-      <header className="dashboard-head">
-        <p className="topbar-kicker">Command centre</p>
-        <div className="control-inline">
+    <div className="mx-auto w-full max-w-3xl px-4 pb-10 pt-2">
+      <header className="flex items-center justify-between gap-4">
+        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">Command centre</p>
+        <div className="flex shrink-0 items-center justify-end">
           {voiceState !== undefined && onOrbToggle ? (
             <WatchoraOrb
               state={orbStateFor(voiceState, hazardActive)}
@@ -222,56 +329,81 @@ export function VoiceFirstDashboard({
         </div>
       </header>
 
-      <TypeToJarvis autoFocus={voiceState !== undefined && (voiceState === 'unsupported' || voiceState === 'permission-needed')} />
+      <div className="mt-6">
+        <TypeToJarvis autoFocus={voiceState !== undefined && (voiceState === 'unsupported' || voiceState === 'permission-needed')} />
+      </div>
 
       {offline && (
-        <StatusBanner tone="warn">
-          You are offline. Local hazard detection, saved information, and OCR remain available. Cloud scene descriptions and remote emergency delivery may be unavailable.
-        </StatusBanner>
+        <Alert tone="warning" politeness="polite" className="mt-4">
+          <p className="text-base leading-relaxed">
+            You are offline. Local hazard detection, saved information, and OCR remain available. Cloud scene descriptions and remote emergency delivery may be unavailable.
+          </p>
+        </Alert>
       )}
 
       {emergency.state === 'active' && (
-        <EmergencyControl status={emergency} onTrigger={onEmergency} onCancel={onCancelEmergency} onResolve={onResolveEmergency} speak={speak} />
+        <div className="mt-4">
+          <EmergencyControl status={emergency} onTrigger={onEmergency} onCancel={onCancelEmergency} onResolve={onResolveEmergency} speak={speak} />
+        </div>
       )}
 
-      <section className="status-grid">
-        <div className="status-card" role="region" aria-label="Watchora status">
-          <div className="status-card-head">
-            <span className="status-icon" aria-hidden="true">
-              {emergency.state === 'active' ? '🚨' : activeJourney ? '🛡️' : '🟢'}
+      <section className="mt-6 grid gap-4 md:grid-cols-2">
+        <Card role="region" aria-label="Watchora status" className="flex flex-col">
+          <CardContent className="flex flex-1 items-start gap-3 p-5">
+            <span
+              className={
+                'flex size-11 shrink-0 items-center justify-center rounded-lg border-2 ' +
+                (emergency.state === 'active'
+                  ? 'border-destructive/60 bg-destructive/10 text-destructive'
+                  : activeJourney
+                    ? 'border-primary/60 bg-primary/10 text-primary'
+                    : 'border-success/60 bg-success/10 text-success')
+              }
+              aria-hidden="true"
+            >
+              {emergency.state === 'active' ? (
+                <Siren className="size-6" />
+              ) : activeJourney ? (
+                <Shield className="size-6" />
+              ) : (
+                <CheckCircle2 className="size-6" />
+              )}
             </span>
-            <div>
-              <h3>Status</h3>
-              <p className="status-line" aria-live="polite">
+            <div className="min-w-0">
+              <CardTitle className="text-xl">Status</CardTitle>
+              <p className="mt-1 text-base leading-relaxed text-foreground" aria-live="polite">
                 {emergency.state === 'active'
                   ? 'Emergency active.'
                   : activeJourney
                     ? `Safe journey to ${activeJourney.destination} (${activeJourney.status}).`
                     : 'Ready.'}
               </p>
-            </div>          </div>
-        </div>
+            </div>
+          </CardContent>
+        </Card>
         <PermissionStatusCard service={permissionService} onOpen={onOpenPermissions} />
       </section>
 
-      <LiveLocationCard
-        onOpenJourney={() => onOpenTab('journey')}
-        permissionService={permissionService}
-        places={places}
-        speak={speak}
-      />
+      <section className="mt-6">
+        <LiveLocationCard
+          onOpenJourney={() => onOpenTab('journey')}
+          permissionService={permissionService}
+          places={places}
+          speak={speak}
+        />
+      </section>
 
-      <section className="primary-cards">
-        <PrimaryActionCard
-          icon="📍"
+      <section className="mt-8 grid gap-4 sm:grid-cols-2">
+        <DashboardActionCard
+          icon={MapPin}
           title="Assist"
           explanation="Use the camera to understand your surroundings."
           buttonLabel="Start Assist"
           onActivate={() => onOpenTab('tracking')}
           voiceHint="Describe what is ahead"
         />
-        <PrimaryActionCard
-          icon="🛡️"
+        <DashboardActionCard
+          icon={Shield}
           title="Safe Journey"
           explanation="Watchora monitors your trip and asks if you need help."
           buttonLabel={activeJourney ? 'Open active journey' : 'Start Safe Journey'}
@@ -280,41 +412,46 @@ export function VoiceFirstDashboard({
           state={activeJourney ? `Active: ${activeJourney.destination}` : 'No active journey'}
           stateTone={activeJourney ? 'ok' : 'neutral'}
         />
-        <PrimaryActionCard
-          icon="📖"
+        <DashboardActionCard
+          icon={BookOpen}
           title="Read"
           explanation="Point at text and hear it read aloud."
           buttonLabel="Read text"
           onActivate={() => onOpenTab('tracking')}
           voiceHint="Read this"
         />
-        <PrimaryActionCard
-          icon="🚨"
+        <DashboardActionCard
+          icon={Siren}
           title="Emergency"
           explanation="Share your location with trusted contacts."
           buttonLabel="Open emergency"
           onActivate={() => onOpenTab('sos')}
           voiceHint="Emergency"
+          buttonVariant="destructive"
         />
       </section>
 
-      <section className="secondary-cards">
-        <button className="secondary-card" onClick={() => onOpenTab('routes')}>
-          🗺️ <strong>Places</strong>
-        </button>
-        <button className="secondary-card" onClick={() => onOpenTab('sos')}>
-          👥 <strong>Contacts</strong>
-        </button>
-        <button className="secondary-card" onClick={() => onOpenTab('community')}>
-          🛡️ <strong>Community</strong>
-        </button>
-        <button className="secondary-card" onClick={() => onOpenTab('settings')}>
-          ⚙️ <strong>Settings</strong>
-        </button>
+      <section className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Button variant="outline" className="h-auto w-full flex-col gap-1.5 px-3 py-4" onClick={() => onOpenTab('routes')}>
+          <MapIcon className="size-6" aria-hidden="true" />
+          <span className="font-semibold">Places</span>
+        </Button>
+        <Button variant="outline" className="h-auto w-full flex-col gap-1.5 px-3 py-4" onClick={() => onOpenTab('sos')}>
+          <Users className="size-6" aria-hidden="true" />
+          <span className="font-semibold">Contacts</span>
+        </Button>
+        <Button variant="outline" className="h-auto w-full flex-col gap-1.5 px-3 py-4" onClick={() => onOpenTab('community')}>
+          <ShieldCheck className="size-6" aria-hidden="true" />
+          <span className="font-semibold">Community</span>
+        </Button>
+        <Button variant="outline" className="h-auto w-full flex-col gap-1.5 px-3 py-4" onClick={() => onOpenTab('settings')}>
+          <SettingsIcon className="size-6" aria-hidden="true" />
+          <span className="font-semibold">Settings</span>
+        </Button>
       </section>
 
       {emergency.state !== 'active' && (
-        <section className="emergency-section">
+        <section className="mt-8">
           <EmergencyControl status={emergency} onTrigger={onEmergency} onCancel={onCancelEmergency} onResolve={onResolveEmergency} speak={speak} />
         </section>
       )}

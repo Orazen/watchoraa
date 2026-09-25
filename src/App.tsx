@@ -1,27 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError, getToken, getRefreshToken, setSession, clearSession, setToken, localeFromVoice, getCachedUser, setCachedUser } from './api';
-import { AiProviderSection, FREE_MODEL_PRESETS } from './AiProviderSettings';
 import { scanBarcode, cachedProduct, rememberProduct, formatProductSpeech, type ScanHandle } from './barcode/productScan';
 import type {
-  AdminAssistanceRequest,
-  AdminIncident,
-  AdminUser,
-  AiStats,
   AssistanceRequest,
-  CaregiverLiveLocation,
-  CaregiverOverview,
   ConsentGrant,
   EmergencySession,
   IncidentReport,
-  PromptVersion,
   PublicUser,
   ReadingEntry,
-  SafeJourney,
   SavedPlace,
   TrustedContact,
   TtsVoice,
-  WardPreferencesPatch,
-  WardSettings,
 } from './api';
 import { useHazardDetection } from './useHazardDetection';
 import { summarizeEnvironment, describeEnvironment, detectionGroundingPrompt, type PlaceContext } from './environment';
@@ -31,17 +20,16 @@ import { playDirectionalCue } from './navigation/spatialAudio';
 import type { CoachDetection, CoachMode } from './navigation/navigationCoach';
 import { fireHapticEvent, type HapticSettings } from './haptics';
 import { useDepthSafety, depthAlertSpeech, type DepthAlert } from './useDepthSafety';
-import { getCurrentPosition, describeRelativePosition, describePlaceAsSpoken, distanceMeters, type Coordinates } from './geo';
+import { getCurrentPosition, describePlaceAsSpoken, distanceMeters, type Coordinates } from './geo';
 import { recognizeText, OCR_FALLBACK_CONFIDENCE_THRESHOLD } from './ocr';
 import { SpeechPriorityManager, type SpeechPriority } from './speechPriority';
 import { LiveAnnouncer, useLiveAnnouncer } from './accessibility/LiveAnnouncer';
-import { useFocusTrap } from './accessibility/FocusManager';
-import { PermissionService } from './permissions/permissionService';
 import { PermissionOnboarding, type OnboardingResult } from './permissions/PermissionOnboarding';
 import { PermissionCenter } from './permissions/PermissionCenter';
 import { VoiceAssistantProvider, useVoiceAssistant } from './voice/VoiceAssistantProvider';
 import type { VoiceSettings } from './voice/voiceTypes';
 import { VoiceFirstDashboard, type DashboardTab } from './pages/VoiceFirstDashboard';
+import type { EmergencyStatus } from './components/EmergencyControl';
 import { PermissionSettings } from './pages/PermissionSettings';
 
 import type { VoiceIntent } from './voice/voiceTypes';
@@ -51,9 +39,18 @@ import { LandingPage } from './LandingPage';
 import { VoiceFirstShell, createVoiceBridge, usePermissionService } from './VoiceFirstShell';
 import { getVoiceTestPhrase, getStepSpeech, getPhoneticFallback } from './voice/voicePhrases';
 
-import { MapView } from './MapView';
+import { AuthScreen } from './screens/AuthScreen';
+import { PlacesTab } from './screens/PlacesTab';
+import { SosTab } from './screens/SosTab';
+import { CommunityTab } from './screens/CommunityTab';
+import { CaregiverTab } from './screens/CaregiverPanel';
+import { SafeJourneyTab } from './screens/SafeJourneyTab';
+import { SettingsTab } from './screens/SettingsTab';
+import { AdminTab } from './screens/AdminTab';
+import type { Tone } from './screens/shared';
+import { Home, ScanEye, MapPin, Route, Siren, Users, HeartHandshake, Settings, Wrench, type LucideIcon } from 'lucide-react';
+import { buttonVariants } from './components/ui';
 type TabKey = 'home' | 'tracking' | 'routes' | 'journey' | 'sos' | 'community' | 'caregiver' | 'settings' | 'admin';
-type Tone = 'online' | 'busy' | 'warning' | 'error';
 
 type RecognitionLike = {
   lang: string;
@@ -67,16 +64,16 @@ type RecognitionLike = {
   stop: () => void;
 };
 
-const tabs: Array<{ key: TabKey; label: string; icon: string; note: string }> = [
-  { key: 'home', label: 'Home', icon: '🏠', note: 'Command centre' },
-  { key: 'tracking', label: 'Assist', icon: '📍', note: 'Camera + voice' },
-  { key: 'routes', label: 'Places', icon: '🗺️', note: 'Saved places' },
-  { key: 'journey', label: 'Safe Journey', icon: '🛡️', note: 'Safety monitoring' },
-  { key: 'sos', label: 'SOS', icon: '🚨', note: 'Emergency' },
-  { key: 'community', label: 'Community', icon: '👥', note: 'Reports' },
-  { key: 'caregiver', label: 'Caregiver', icon: '🤝', note: 'People you support' },
-  { key: 'settings', label: 'Settings', icon: '⚙️', note: 'Voice and account' },
-  { key: 'admin', label: 'Admin', icon: '🛠️', note: 'Operations' },
+const tabs: Array<{ key: TabKey; label: string; icon: LucideIcon; note: string }> = [
+  { key: 'home', label: 'Home', icon: Home, note: 'Command centre' },
+  { key: 'tracking', label: 'Assist', icon: ScanEye, note: 'Camera + voice' },
+  { key: 'routes', label: 'Places', icon: MapPin, note: 'Saved places' },
+  { key: 'journey', label: 'Safe Journey', icon: Route, note: 'Safety monitoring' },
+  { key: 'sos', label: 'SOS', icon: Siren, note: 'Emergency' },
+  { key: 'community', label: 'Community', icon: Users, note: 'Reports' },
+  { key: 'caregiver', label: 'Caregiver', icon: HeartHandshake, note: 'People you support' },
+  { key: 'settings', label: 'Settings', icon: Settings, note: 'Voice and account' },
+  { key: 'admin', label: 'Admin', icon: Wrench, note: 'Operations' },
 ];
 
 type AnalysisMode = 'navigation' | 'assistant' | 'reading' | 'environment';
@@ -93,7 +90,7 @@ type AiResult = {
   // never mislabeled as "Gemini live" (a real bug caught during live verification
   // of Phase B: the source pill previously only checked `demo`, which is false
   // for both a genuine Gemini call and a local Tesseract.js read).
-  source: 'gemini' | 'local-ocr';
+  source: 'gemini' | 'local-ocr' | 'ai-ocr' | 'your-ai-key';
 };
 
 const ANALYSIS_TIMEOUT_MS = 20_000;
@@ -127,202 +124,6 @@ function compressImage(canvas: HTMLCanvasElement, maxDimension = 1280, quality =
 
   context.drawImage(canvas, 0, 0, scaledCanvas.width, scaledCanvas.height);
   return scaledCanvas.toDataURL('image/jpeg', quality);
-}
-
-function AuthScreen({
-  onAuthenticated,
-  initialMode = 'login',
-  onClose,
-}: {
-  onAuthenticated: (user: PublicUser) => void;
-  initialMode?: 'login' | 'signup';
-  onClose?: () => void;
-}) {
-  const [mode, setMode] = useState<'login' | 'signup'>(initialMode);
-  const [flow, setFlow] = useState<'auth' | 'forgot' | 'reset'>('auth');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [fullName, setFullName] = useState('');
-  // Blind-user-perspective audit (2026-08-07): this dialog had role=dialog
-  // aria-modal=true but no actual focus trap, so Tab could escape into the
-  // page behind it and focus was never restored to the triggering control
-  // on close — both real screen-reader/keyboard usability defects, not just
-  // Lighthouse-invisible ones (Lighthouse does not check for a real trap).
-  const authDialogRef = useRef<HTMLDivElement | null>(null);
-  useFocusTrap(authDialogRef, true);
-  const [resetToken, setResetToken] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  async function submit() {
-    setError('');
-    if (!email.trim() || !password) {
-      setError('Enter your email and password.');
-      return;
-    }
-    if (mode === 'signup' && !fullName.trim()) {
-      setError('Enter your name.');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const result =
-        mode === 'signup'
-          ? await api.signup({ email: email.trim(), password, fullName: fullName.trim() })
-          : await api.login({ email: email.trim(), password });
-      setSession(result.token, result.refreshToken);
-      onAuthenticated(result.user);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not reach the server. Is the backend running?');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function forgot() {
-    setError('');
-    if (!email.trim()) {
-      setError('Enter your email address.');
-      return;
-    }
-    setLoading(true);
-    try {
-      const result = await api.forgotPassword(email.trim());
-      const msg = result.devToken
-        ? `Reset issued. Dev token (self-hosted, no email configured): ${result.devToken} — open Settings → Forgot password → enter it below.`
-        : 'If an account exists, a reset link has been issued.';
-      setError(msg);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not request a reset.');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function reset() {
-    setError('');
-    if (!resetToken.trim() || password.length < 8) {
-      setError('Enter the reset token and a new password (at least 8 characters).');
-      return;
-    }
-    setLoading(true);
-    try {
-      const result = await api.resetPassword(resetToken.trim(), password);
-      setSession(result.token, result.refreshToken);
-      setResetToken('');
-      onAuthenticated(result.user);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not reset your password.');
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  return (
-    <div className="onboarding-backdrop" ref={authDialogRef} role="dialog" aria-modal="true" aria-labelledby="auth-title">
-      <section className="panel onboarding-card">
-        <div className="section-head">
-          <div>
-            <p className="topbar-kicker">watchora</p>
-            <h2 id="auth-title">{mode === 'signup' ? 'Create your account' : 'Sign in'}</h2>
-          </div>
-          {onClose ? (
-            <button className="ghost-btn" onClick={onClose} aria-label="Close">
-              ✕
-            </button>
-          ) : null}
-        </div>
-        <div className="form-stack">
-          {flow === 'forgot' ? (
-            <>
-              <label>
-                <span>Email</span>
-                <input aria-label="Email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" />
-              </label>
-              {error ? (
-                <p role="alert" style={{ color: 'var(--danger)', whiteSpace: 'pre-wrap' }}>
-                  {error}
-                </p>
-              ) : null}
-              <button className="primary-btn" onClick={forgot} disabled={loading}>
-                {loading ? 'Please wait…' : 'Send reset link'}
-              </button>
-              <button className="ghost-btn" onClick={() => setFlow('auth')}>
-                Back to sign in
-              </button>
-            </>
-          ) : flow === 'reset' ? (
-            <>
-              <label>
-                <span>Reset token</span>
-                <input aria-label="Reset token" value={resetToken} onChange={(event) => setResetToken(event.target.value)} placeholder="Paste the reset token" />
-              </label>
-              <label>
-                <span>New password</span>
-                <input aria-label="New password"
-                  type="password"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  placeholder="At least 8 characters"
-                />
-              </label>
-              {error ? (
-                <p role="alert" style={{ color: 'var(--danger)', whiteSpace: 'pre-wrap' }}>
-                  {error}
-                </p>
-              ) : null}
-              <button className="primary-btn" onClick={reset} disabled={loading}>
-                {loading ? 'Please wait…' : 'Set new password'}
-              </button>
-              <button className="ghost-btn" onClick={() => setFlow('auth')}>
-                Back to sign in
-              </button>
-            </>
-          ) : (
-            <>
-              {mode === 'signup' ? (
-                <label>
-                  <span>Full name</span>
-                  <input aria-label="Full name" value={fullName} onChange={(event) => setFullName(event.target.value)} placeholder="Your name" />
-                </label>
-              ) : null}
-              <label>
-                <span>Email</span>
-                <input aria-label="Email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" />
-              </label>
-              <label>
-                <span>Password</span>
-                <input aria-label="Password"
-                  type="password"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  placeholder="At least 8 characters"
-                  onKeyDown={(event) => event.key === 'Enter' && submit()}
-                />
-              </label>
-              {error ? (
-                <p role="alert" style={{ color: 'var(--danger)' }}>
-                  {error}
-                </p>
-              ) : null}
-              <button className="primary-btn" onClick={submit} disabled={loading}>
-                {loading ? 'Please wait…' : mode === 'signup' ? 'Create account' : 'Sign in'}
-              </button>
-              <button className="ghost-btn" onClick={() => setMode(mode === 'signup' ? 'login' : 'signup')}>
-                {mode === 'signup' ? 'Already have an account? Sign in' : "Don't have an account? Create one"}
-              </button>
-              {mode === 'login' ? (
-                <button className="ghost-btn" onClick={() => setFlow('forgot')}>
-                  Forgot your password?
-                </button>
-              ) : null}
-            </>
-          )}
-        </div>
-      </section>
-    </div>
-  );
 }
 
 function App() {
@@ -457,6 +258,10 @@ function MainApp({
   const [incidents, setIncidents] = useState<IncidentReport[] | null>(null);
   const [assistanceRequests, setAssistanceRequests] = useState<AssistanceRequest[] | null>(null);
   const [readingEntries, setReadingEntries] = useState<ReadingEntry[] | null>(null);
+  // Real emergency + journey state for the Home dashboard cards — refetched
+  // every time Home opens so SOS/journey tab actions are reflected there.
+  const [homeEmergency, setHomeEmergency] = useState<EmergencyStatus>({ state: 'idle' });
+  const [homeJourney, setHomeJourney] = useState<{ destination: string; status: string } | null>(null);
   const prefsLoadedRef = useRef(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const onboardingKey = `watchora_onboarding_${user.id}`;
@@ -655,6 +460,28 @@ function MainApp({
     }, 4000);
     return () => clearInterval(t);
   }, [cameraActive, hazardLayerEnabled, depthSafety.status, depthSafety.submitFrame]);
+
+  // Home dashboard reflects REAL emergency/journey state: refetched whenever
+  // the Home tab opens (SOS and Safe Journey tabs mutate their own state, so
+  // this is the honest sync point). Silent catch — absence of data renders
+  // the same idle cards as before, never a fake "active" state.
+  useEffect(() => {
+    if (activeTab !== 'home') return;
+    api
+      .activeEmergency()
+      .then(({ session }) =>
+        setHomeEmergency(
+          session
+            ? { state: 'active', sessionId: session.id, contactsNotified: true, liveSharing: true }
+            : { state: 'idle' },
+        ),
+      )
+      .catch(() => {});
+    api
+      .activeJourney()
+      .then(({ journey }) => setHomeJourney(journey ? { destination: journey.destination, status: journey.status.toLowerCase() } : null))
+      .catch(() => {});
+  }, [activeTab]);
 
   // Real-device performance audit (2026-08-07) found the YOLOv8n model is
   // ~12MB — on throttled mobile data (e.g. 4G) that can take up to a minute
@@ -1454,9 +1281,37 @@ function MainApp({
           setIsAnalyzing(false);
           return;
         }
-        // Low-confidence or empty local OCR: fall through to the Gemini path below
+        // Low-confidence or empty local OCR: try the dedicated AI OCR endpoint
+        // (verbatim reading-order extraction) before the general cloud path
         // rather than reading unreliable text aloud with false authority.
-        announce('Local reading was unclear. Asking the cloud model for a better read.', 'busy');
+        announce('Local reading was unclear. Trying AI text reading.', 'busy');
+        try {
+          const aiOcr = await api.ocrRead(imageDataUrl, language);
+          if (aiOcr.text.trim()) {
+            const lines = aiOcr.text.split('\n').map((line) => line.trim()).filter(Boolean);
+            const result: AiResult = {
+              mode: 'reading',
+              summary: lines[0] || aiOcr.text.slice(0, 120),
+              details: lines.slice(1),
+              warnings: [],
+              confidence: 'high',
+              shouldStop: false,
+              demo: false,
+              source: aiOcr.source === 'user' ? 'your-ai-key' : 'ai-ocr',
+            };
+            setAiResult(result);
+            setResponse(result.summary);
+            announce('Read with AI text reading.', 'online');
+            speak(result.summary);
+            setIsAnalyzing(false);
+            return;
+          }
+          // AI OCR found no readable text either — fall through to the
+          // general reading path so the user still gets a spoken answer.
+          announce('No readable text found. Asking the cloud model for a better read.', 'busy');
+        } catch {
+          announce('AI text reading unavailable. Asking the cloud model instead.', 'busy');
+        }
       } catch {
         announce('Local reading failed. Asking the cloud model instead.', 'busy');
       }
@@ -1922,6 +1777,10 @@ function MainApp({
                     <span className="pill pill-neutral">Demo mode</span>
                   ) : aiResult.source === 'local-ocr' ? (
                     <span className="pill pill-success">Read locally, on this device</span>
+                  ) : aiResult.source === 'ai-ocr' ? (
+                    <span className="pill pill-success">Read with AI text reading</span>
+                  ) : aiResult.source === 'your-ai-key' ? (
+                    <span className="pill pill-success">Read with your AI key</span>
                   ) : (
                     <span className="pill pill-success">AI live</span>
                   )}
@@ -2018,7 +1877,7 @@ function MainApp({
                   className={`nav-item ${activeTab === tab.key ? 'active' : ''}`}
                   onClick={() => setActiveTab(tab.key)}
                 >
-                  <span className="nav-icon" aria-hidden="true">{tab.icon}</span>
+                  <tab.icon className="size-5 shrink-0" aria-hidden="true" />
                   <span>
                     <strong>{tab.label}</strong>
                     <small>{tab.note}</small>
@@ -2047,8 +1906,11 @@ function MainApp({
               <h1>{activeLabel}</h1>
             </div>
             <div className="topbar-actions">
-              <button className="primary-btn sos-inline" onClick={() => setActiveTab('sos')}>
-                <span aria-hidden="true">🚨</span> SOS
+              <button
+                className={buttonVariants({ variant: 'destructive', size: 'md' })}
+                onClick={() => setActiveTab('sos')}
+              >
+                <Siren className="size-5" aria-hidden="true" /> SOS
               </button>
             </div>
           </header>
@@ -2058,8 +1920,8 @@ function MainApp({
               <section role="tabpanel" id="panel-home" aria-labelledby="tab-home" className="tab-panel">
                 <VoiceFirstDashboard
                   permissionService={permissionService}
-                  emergency={{ state: 'idle' }}
-                  activeJourney={null}
+                  emergency={homeEmergency}
+                  activeJourney={homeJourney}
                   offline={!navigator.onLine}
                   voiceState={voiceAssistant.state}
                   hazardActive={hazardActive || hazardState.topHazard != null && hazardState.topHazard.className === 'person'}
@@ -2072,8 +1934,28 @@ function MainApp({
                     announce('Emergency requested. Use the emergency screen to share your location.', 'error');
                     speak('Emergency requested. Use the emergency screen to share your location.', 1, 'dash-emergency');
                   }}
-                  onCancelEmergency={() => {}}
-                  onResolveEmergency={() => {}}
+                  onCancelEmergency={() => {
+                    if (!homeEmergency.sessionId) return;
+                    api
+                      .cancelEmergency(homeEmergency.sessionId)
+                      .then(() => {
+                        setHomeEmergency({ state: 'idle' });
+                        announce('Emergency cancelled.', 'online');
+                        speak('Emergency cancelled.', 2, 'dash-emergency-cancelled');
+                      })
+                      .catch(() => announce('Could not cancel the emergency. Try again from the emergency screen.', 'error'));
+                  }}
+                  onResolveEmergency={() => {
+                    if (!homeEmergency.sessionId) return;
+                    api
+                      .resolveEmergency(homeEmergency.sessionId)
+                      .then(() => {
+                        setHomeEmergency({ state: 'idle' });
+                        announce('Emergency resolved.', 'online');
+                        speak('Emergency resolved.', 2, 'dash-emergency-resolved');
+                      })
+                      .catch(() => announce('Could not resolve the emergency. Try again from the emergency screen.', 'error'));
+                  }}
                   speak={speak as (text: string, priority?: number, dedupeKey?: string) => void}
                 />
               </section>
@@ -2203,7 +2085,7 @@ function MainApp({
                 className={`bottom-nav-item ${activeTab === tab.key ? 'active' : ''}`}
                 onClick={() => setActiveTab(tab.key)}
               >
-                <span aria-hidden="true">{tab.icon}</span>
+                <tab.icon className="size-5" aria-hidden="true" />
                 <strong>{tab.label}</strong>
               </button>
             ))}
@@ -2249,1909 +2131,6 @@ function MainApp({
         </div>
       ) : null}
     </>
-  );
-}
-
-function PlacesTab({
-  places,
-  onCreated,
-  onDeleted,
-  announce,
-}: {
-  places: SavedPlace[] | null;
-  onCreated: (place: SavedPlace) => void;
-  onDeleted: (id: string) => void;
-  announce: (message: string, tone?: Tone) => void;
-}) {
-  const [label, setLabel] = useState('');
-  const [address, setAddress] = useState('');
-  const [notes, setNotes] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [currentPosition, setCurrentPosition] = useState<Coordinates | null>(null);
-  const [locating, setLocating] = useState(false);
-  const [newPlaceCoords, setNewPlaceCoords] = useState<Coordinates | null>(null);
-
-  async function addPlace() {
-    if (!label.trim()) {
-      announce('Enter a name for this place.', 'warning');
-      return;
-    }
-    setSaving(true);
-    try {
-      const { place } = await api.createPlace({
-        label: label.trim(),
-        address: address.trim() || undefined,
-        notes: notes.trim() || undefined,
-        latitude: newPlaceCoords?.latitude,
-        longitude: newPlaceCoords?.longitude,
-      });
-      onCreated(place);
-      setLabel('');
-      setAddress('');
-      setNotes('');
-      setNewPlaceCoords(null);
-      announce('Place saved.', 'online');
-    } catch (error) {
-      announce(error instanceof ApiError ? error.message : 'Could not save this place.', 'error');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function useCurrentLocationForNewPlace() {
-    setLocating(true);
-    try {
-      const coords = await getCurrentPosition();
-      setNewPlaceCoords(coords);
-      announce('Current location captured for this place.', 'online');
-    } catch (error) {
-      announce(error instanceof Error ? error.message : 'Could not get your location.', 'error');
-    } finally {
-      setLocating(false);
-    }
-  }
-
-  async function locateMe() {
-    setLocating(true);
-    try {
-      const coords = await getCurrentPosition();
-      setCurrentPosition(coords);
-      announce('Location updated. Distances below are relative to where you are now.', 'online');
-    } catch (error) {
-      announce(error instanceof Error ? error.message : 'Could not get your location.', 'error');
-    } finally {
-      setLocating(false);
-    }
-  }
-
-  async function removePlace(id: string) {
-    try {
-      await api.deletePlace(id);
-      onDeleted(id);
-    } catch (error) {
-      announce(error instanceof ApiError ? error.message : 'Could not delete this place.', 'error');
-    }
-  }
-
-  return (
-    <div className="screen-grid routes-grid">
-      <section className="panel list-panel">
-        <div className="section-head">
-          <h2>Saved places</h2>
-          <button className="ghost-btn" onClick={locateMe} disabled={locating}>
-            {locating ? 'Locating…' : currentPosition ? <><span aria-hidden="true">📍</span> Update my location</> : <><span aria-hidden="true">📍</span> Use my location</>}
-          </button>
-        </div>
-        {places === null ? (
-          <p className="soft-note" role="status" aria-live="polite">Loading…</p>
-        ) : places.length === 0 ? (
-          <p className="soft-note" role="status" aria-live="polite">No saved places yet. Add one below.</p>
-        ) : (
-          <div className="route-list">
-            {places.map((place) => {
-              const hasCoords = place.latitude != null && place.longitude != null;
-              const relative =
-                currentPosition && hasCoords
-                  ? describeRelativePosition(currentPosition, { latitude: place.latitude!, longitude: place.longitude! })
-                  : null;
-              return (
-                <div key={place.id} className="route-card">
-                  <div>
-                    <strong>{place.label}</strong>
-                    <div className="route-meta">{place.address || place.notes || 'No details added'}</div>
-                    {relative ? <div className="route-distance">{relative}</div> : null}
-                    {!hasCoords ? <div className="route-meta route-meta-muted">No location saved for this place.</div> : null}
-                  </div>
-                  <button className="ghost-btn" onClick={() => removePlace(place.id)}>
-                    Remove
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </section>
-      <section className="panel detail-panel">
-        <div className="section-head">
-          <h2>Add a place</h2>
-        </div>
-        <div className="form-stack">
-          <label>
-            <span>Name</span>
-            <input aria-label="Name" value={label} onChange={(event) => setLabel(event.target.value)} placeholder="e.g. Pharmacy" />
-          </label>
-          <label>
-            <span>Address (optional)</span>
-            <input aria-label="Address (optional)" value={address} onChange={(event) => setAddress(event.target.value)} placeholder="Street address" />
-          </label>
-          <label>
-            <span>Notes (optional)</span>
-            <textarea aria-label="Notes (optional)" rows={3} value={notes} onChange={(event) => setNotes(event.target.value)} placeholder="Anything worth remembering" />
-          </label>
-          <button className="secondary-btn" onClick={useCurrentLocationForNewPlace} disabled={locating}>
-            {newPlaceCoords ? <><span aria-hidden="true">📍</span> Location captured</> : locating ? 'Locating…' : <><span aria-hidden="true">📍</span> Save my current location with this place</>}
-          </button>
-          <button className="primary-btn" onClick={addPlace} disabled={saving}>
-            {saving ? 'Saving…' : '＋ Save place'}
-          </button>
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function SosTab({
-  contacts,
-  assistanceRequests,
-  onContactCreated,
-  onContactDeleted,
-  onRequestCreated,
-  onRequestResolved,
-  announce,
-  speak,
-}: {
-  contacts: TrustedContact[] | null;
-  assistanceRequests: AssistanceRequest[] | null;
-  onContactCreated: (contact: TrustedContact) => void;
-  onContactDeleted: (id: string) => void;
-  onRequestCreated: (request: AssistanceRequest) => void;
-  onRequestResolved: (request: AssistanceRequest) => void;
-  announce: (message: string, tone?: Tone) => void;
-  speak: (text: string, priority?: SpeechPriority, dedupeKey?: string) => void;
-}) {
-  const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [email, setEmail] = useState('');
-  const [relationship, setRelationship] = useState('');
-  const [sosMessage, setSosMessage] = useState('I need help. Please check on me.');
-  const [sending, setSending] = useState(false);
-  const [shareLocOnAdd, setShareLocOnAdd] = useState(false);
-  const [manageOnAdd, setManageOnAdd] = useState(false);
-  // Apple-style SOS: full-screen takeover with a spoken countdown, then an
-  // automatic deterministic emergency session. window.confirm is unusable
-  // non-visually; the countdown IS the confirmation.
-  const [countdown, setCountdown] = useState<number | null>(null);
-  const [activeEmergency, setActiveEmergency] = useState<{ id: string; cancelable: boolean } | null>(null);
-
-  function startSosCountdown() {
-    if (countdown != null || sending) return;
-    setCountdown(5);
-    speak('Emergency. Sending S O S in five. Say or tap cancel to stop.', 1, 'sos-countdown-5');
-  }
-
-  function cancelSosCountdown() {
-    if (countdown == null) return;
-    setCountdown(null);
-    speak('Emergency cancelled.', 1, 'sos-cancelled');
-    announce('Emergency cancelled.', 'online');
-  }
-
-  // Countdown tick + auto-send.
-  useEffect(() => {
-    if (countdown == null || countdown <= 0) return;
-    const t = setTimeout(() => {
-      const next = countdown - 1;
-      setCountdown(next);
-      if (next > 0) speak(String(next), 1, `sos-countdown-${next}`);
-    }, 1000);
-    return () => clearTimeout(t);
-  }, [countdown]);
-
-  useEffect(() => {
-    if (countdown !== 0) return;
-    let cancelled = false;
-    (async () => {
-      setSending(true);
-      try {
-        // Grab current position so the session carries live coordinates.
-        let coords: { lat: number; lng: number; accuracy?: number } | undefined;
-        try {
-          const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-            navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 5000, maximumAge: 10_000 });
-          });
-          coords = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy };
-        } catch {
-          // Location unavailable: SOS still fires without coordinates.
-        }
-        const { session } = await api.triggerEmergency({
-          lat: coords?.lat,
-          lng: coords?.lng,
-          accuracy: coords?.accuracy,
-          emergencyType: 'sos-button',
-        });
-        if (!cancelled) {
-          setActiveEmergency({ id: session.id, cancelable: true });
-          speak('S O S sent. Your trusted contacts are being notified. Your location is being shared.', 1, 'sos-sent-live');
-          announce('SOS sent. Emergency session active.', 'error');
-        }
-      } catch (error) {
-        if (!cancelled) {
-          // Fallback to the deterministic assistance-request log if the
-          // emergency session endpoint is unreachable.
-          try {
-            const { request } = await api.createAssistanceRequest({ message: sosMessage.trim() || 'I need help.', locationShare: true });
-            onRequestCreated(request);
-            api.grantConsent({ scope: 'LOCATION_SHARING', metadata: { source: 'sos', assistanceRequestId: request.id } }).catch(() => {});
-            announce('SOS request recorded.', 'error');
-            speak('S O S request sent.', 1, 'sos-sent');
-          } catch {
-            announce(error instanceof ApiError ? error.message : 'Could not send the SOS request.', 'error');
-            speak('S O S failed. Try again or call your emergency number.', 1, 'sos-failed');
-          }
-        }
-      } finally {
-        setSending(false);
-        setCountdown(null);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [countdown]);
-
-  async function cancelActiveEmergency() {
-    if (!activeEmergency) return;
-    try {
-      await api.cancelEmergency(activeEmergency.id);
-      setActiveEmergency(null);
-      announce('Emergency cancelled.', 'online');
-      speak('Emergency cancelled. Your contacts were not notified.', 1, 'sos-live-cancelled');
-    } catch {
-      announce('The cancellation window has closed. Use Resolve when you are safe.', 'warning');
-    }
-  }
-
-  async function resolveActiveEmergency() {
-    if (!activeEmergency) return;
-    try {
-      await api.resolveEmergency(activeEmergency.id);
-      setActiveEmergency(null);
-      announce('Marked as resolved. You are safe.', 'online');
-      speak('Marked as resolved. You are safe.', 1, 'sos-resolved');
-    } catch {
-      announce('Could not resolve this emergency session.', 'error');
-    }
-  }
-
-  async function addContact() {
-    if (!name.trim()) {
-      announce('Enter a contact name.', 'warning');
-      return;
-    }
-    try {
-      const { contact } = await api.createContact({
-        name: name.trim(),
-        phone: phone.trim() || undefined,
-        email: email.trim() || undefined,
-        relationship: relationship.trim() || undefined,
-        canSeeLocation: shareLocOnAdd,
-        canManageSettings: manageOnAdd,
-      });
-      onContactCreated(contact);
-      setName('');
-      setPhone('');
-      setEmail('');
-      setRelationship('');
-      setShareLocOnAdd(false);
-      setManageOnAdd(false);
-      announce(
-        manageOnAdd
-          ? 'Contact added. Once they create a Watchora account with this email, they can adjust your settings remotely.'
-          : 'Contact added.',
-        'online',
-      );
-    } catch (error) {
-      announce(error instanceof ApiError ? error.message : 'Could not add this contact.', 'error');
-    }
-  }
-
-  async function removeContact(id: string) {
-    try {
-      await api.deleteContact(id);
-      onContactDeleted(id);
-    } catch (error) {
-      announce(error instanceof ApiError ? error.message : 'Could not remove this contact.', 'error');
-    }
-  }
-
-  async function toggleLocationConsent(contact: TrustedContact) {
-    try {
-      const { contact: updated } = await api.updateContact(contact.id, { canSeeLocation: !contact.canSeeLocation });
-      onContactCreated(updated); // same shape; replace in list
-      announce(
-        updated.canSeeLocation
-          ? `${contact.name} can now see your live location during safe journeys.`
-          : `Live location sharing with ${contact.name} is off.`,
-        'online',
-      );
-    } catch (error) {
-      announce(error instanceof ApiError ? error.message : 'Could not update location sharing.', 'error');
-    }
-  }
-
-  async function toggleManageConsent(contact: TrustedContact) {
-    try {
-      const { contact: updated } = await api.updateContact(contact.id, { canManageSettings: !contact.canManageSettings });
-      onContactCreated(updated); // same shape; replace in list
-      speak(
-        updated.canManageSettings
-          ? `${contact.name} can now manage your Watchora settings from their own account. They will never see or change your AI key.`
-          : `Remote settings management for ${contact.name} is off.`,
-        4,
-        `manage-consent-${contact.id}`,
-      );
-      announce(
-        updated.canManageSettings
-          ? `${contact.name} can now manage your settings remotely.`
-          : `Remote settings management for ${contact.name} is off.`,
-        'online',
-      );
-    } catch (error) {
-      announce(error instanceof ApiError ? error.message : 'Could not update remote management.', 'error');
-    }
-  }
-
-  async function triggerSOS() {
-    // Apple-style: replace window.confirm (unusable non-visually) with the
-    // spoken countdown takeover.
-    startSosCountdown();
-  }
-
-  async function resolveRequest(id: string) {
-    try {
-      const { request } = await api.resolveAssistanceRequest(id);
-      onRequestResolved(request);
-      announce('Marked as resolved.', 'online');
-    } catch (error) {
-      announce(error instanceof ApiError ? error.message : 'Could not update this request.', 'error');
-    }
-  }
-
-  return (
-    <div className="screen-grid sos-grid">
-      {/* Apple-style full-screen SOS takeover: countdown or live session. */}
-      {(countdown !== null || activeEmergency) && (
-        <div className="sos-overlay" role="alertdialog" aria-modal="true" aria-label="Emergency">
-          {countdown !== null && countdown > 0 ? (
-            <>
-              <p className="sos-overlay-title">Emergency SOS</p>
-              <p className="sos-countdown" aria-live="assertive">{countdown}</p>
-              <p className="sos-overlay-sub">Sending SOS and your location when the countdown ends.</p>
-              <button className="sos-cancel-btn" onClick={cancelSosCountdown} autoFocus>
-                Cancel emergency
-              </button>
-            </>
-          ) : countdown === 0 || sending ? (
-            <>
-              <p className="sos-overlay-title">Sending…</p>
-              <p className="sos-countdown" aria-hidden="true">🚨</p>
-              <p className="sos-overlay-sub">Contacting your trusted contacts.</p>
-            </>
-          ) : activeEmergency ? (
-            <>
-              <p className="sos-overlay-title">SOS active</p>
-              <p className="sos-overlay-sub" role="status" aria-live="assertive">
-                Your emergency is live. Trusted contacts are being notified with your location.
-              </p>
-              <div className="sos-overlay-actions">
-                <button className="sos-cancel-btn" onClick={cancelActiveEmergency} autoFocus>
-                  I'm safe — cancel
-                </button>
-                <button className="ghost-btn" onClick={resolveActiveEmergency}>
-                  Resolve (I'm fine now)
-                </button>
-              </div>
-            </>
-          ) : null}
-        </div>
-      )}
-      <section className="panel sos-hero">
-        <div className="section-head">
-          <h2>SOS center</h2>
-          <button className="sos-button" onClick={triggerSOS} disabled={sending || countdown != null}>
-            {sending ? 'Sending…' : <><span aria-hidden="true">🚨</span> Send SOS</>}
-          </button>
-        </div>
-        <div className="form-stack">
-          <label>
-            <span>Message sent with the SOS</span>
-            <textarea aria-label="Message sent with the SOS" rows={2} value={sosMessage} onChange={(event) => setSosMessage(event.target.value)} />
-          </label>
-        </div>
-
-        <div className="sos-contacts">
-          <h3>Emergency contacts</h3>
-          {contacts === null ? (
-            <p className="soft-note" role="status" aria-live="polite">Loading…</p>
-          ) : contacts.length === 0 ? (
-            <p className="soft-note" role="status" aria-live="polite">No emergency contacts yet.</p>
-          ) : (
-            contacts.map((contact, index) => (
-              <div className="contact-row" key={contact.id} style={{ flexWrap: 'wrap' }}>
-                <span>
-                  {index + 1}. {contact.name} {contact.relationship ? `(${contact.relationship})` : ''}
-                </span>
-                <span>{contact.phone || contact.email || '—'}</span>
-                <button
-                  className="ghost-btn"
-                  aria-pressed={contact.canSeeLocation}
-                  onClick={() => toggleLocationConsent(contact)}
-                  title="Let this contact see your live location during safe journeys"
-                >
-                  {contact.canSeeLocation ? <><span aria-hidden="true">📍</span> Location on</> : <><span aria-hidden="true">📍</span> Location off</>}
-                </button>
-                {contact.email && (
-                  <button
-                    className="ghost-btn"
-                    aria-pressed={contact.canManageSettings}
-                    onClick={() => toggleManageConsent(contact)}
-                    title="Let this contact adjust your settings from their own Watchora account"
-                  >
-                    {contact.canManageSettings ? <><span aria-hidden="true">🛠️</span> Remote care on</> : <><span aria-hidden="true">🛠️</span> Remote care off</>}
-                  </button>
-                )}
-                <button className="ghost-btn" onClick={() => removeContact(contact.id)}>
-                  Remove
-                </button>
-              </div>
-            ))
-          )}
-          <div className="form-stack" style={{ marginTop: 12 }}>
-            <label>
-              <span>Contact name</span>
-              <input aria-label="Contact name" value={name} onChange={(event) => setName(event.target.value)} placeholder="Name" />
-            </label>
-            <label>
-              <span>Relationship (optional)</span>
-              <input aria-label="Relationship (optional)" value={relationship} onChange={(event) => setRelationship(event.target.value)} placeholder="e.g. Daughter" />
-            </label>
-            <label>
-              <span>Phone (optional)</span>
-              <input aria-label="Phone (optional)" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="Phone number" />
-            </label>
-            <label>
-              <span>Email (needed for remote care linking)</span>
-              <input
-                aria-label="Email (needed for remote care linking)"
-                type="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                placeholder="their@email.com"
-              />
-            </label>
-            <label className="settings-row">
-              <span>Share live location with this contact</span>
-              <button className="ghost-btn" aria-pressed={shareLocOnAdd} onClick={() => setShareLocOnAdd(!shareLocOnAdd)}>
-                {shareLocOnAdd ? 'On' : 'Off'}
-              </button>
-            </label>
-            <label className="settings-row">
-              <span>Let this contact manage my settings</span>
-              <button className="ghost-btn" aria-pressed={manageOnAdd} onClick={() => setManageOnAdd(!manageOnAdd)}>
-                {manageOnAdd ? 'On' : 'Off'}
-              </button>
-            </label>
-            <p className="soft-note">
-              Remote care: once this contact signs up with the same email, they can adjust your speech, display, and
-              connectivity settings from their own Watchora account — nothing else. Your AI key is never visible to
-              them, every change is logged, and you can turn this off at any time.
-            </p>
-            <button className="secondary-btn" onClick={addContact}>
-              ＋ Add contact
-            </button>
-          </div>
-        </div>
-      </section>
-
-      <section className="panel sos-flow">
-        <div className="section-head">
-          <h2>SOS history</h2>
-        </div>
-        {assistanceRequests === null ? (
-          <p className="soft-note" role="status" aria-live="polite">Loading…</p>
-        ) : assistanceRequests.length === 0 ? (
-          <p className="soft-note" role="status" aria-live="polite">No SOS requests yet.</p>
-        ) : (
-          <div className="sos-timeline">
-            {assistanceRequests.map((req) => (
-              <div className="timeline-item" key={req.id}>
-                <div>
-                  <strong>{new Date(req.createdAt).toLocaleString()}</strong> — {req.message}
-                </div>
-                <div>
-                  <span className={`pill ${req.status === 'RESOLVED' ? 'pill-success' : 'pill-danger'}`}>{req.status}</span>
-                  {req.status !== 'RESOLVED' ? (
-                    <button className="ghost-btn" onClick={() => resolveRequest(req.id)}>
-                      Mark resolved
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-    </div>
-  );
-}
-
-function CommunityTab({
-  incidents,
-  onCreated,
-  announce,
-}: {
-  incidents: IncidentReport[] | null;
-  onCreated: (incident: IncidentReport) => void;
-  announce: (message: string, tone?: Tone) => void;
-}) {
-  const [category, setCategory] = useState('Sidewalk');
-  const [description, setDescription] = useState('');
-  const [severity, setSeverity] = useState<IncidentReport['severity']>('MEDIUM');
-  const [saving, setSaving] = useState(false);
-
-  async function addReport() {
-    if (!description.trim()) {
-      announce('Describe the hazard before submitting.', 'warning');
-      return;
-    }
-    setSaving(true);
-    try {
-      // Auto-attach current position so blind reporters never type an address.
-      // Best-effort: the report is still submitted if GPS fails (it just won't
-      // appear in near-me queries).
-      let lat: number | undefined;
-      let lng: number | undefined;
-      try {
-        const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 6000, maximumAge: 30_000 });
-        });
-        lat = pos.coords.latitude;
-        lng = pos.coords.longitude;
-      } catch {
-        // No location: submit without coordinates.
-      }
-      const { incident } = await api.createIncident({ category: category.trim() || 'General', description: description.trim(), severity, lat, lng });
-      onCreated(incident);
-      setDescription('');
-      announce(lat != null ? 'Report submitted and pinned to your current location.' : 'Report submitted.', 'online');
-    } catch (error) {
-      announce(error instanceof ApiError ? error.message : 'Could not submit this report.', 'error');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div className="screen-grid community-grid">
-      <section className="panel community-feed">
-        <div className="section-head">
-          <h2>Community reports</h2>
-        </div>
-        {incidents === null ? (
-          <p className="soft-note" role="status" aria-live="polite">Loading…</p>
-        ) : incidents.length === 0 ? (
-          <p className="soft-note" role="status" aria-live="polite">No reports yet. Be the first to add one.</p>
-        ) : (
-          <div className="feed-list">
-            {incidents.map((incident) => (
-              <div className={`feed-card tone-${incident.severity === 'LOW' ? 'success' : incident.severity === 'MEDIUM' ? 'warning' : 'danger'}`} key={incident.id}>
-                <div className="feed-head">
-                  <strong>{incident.category}</strong>
-                  <span>{new Date(incident.createdAt).toLocaleDateString()}</span>
-                </div>
-                <p>{incident.description}</p>
-                <div className="feed-footer">
-                  <span>{incident.severity}</span>
-                  <span>Reported by {incident.reporter.fullName}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-      <section className="panel community-form">
-        <div className="section-head">
-          <h2>Add a report</h2>
-        </div>
-        <div className="form-stack">
-          <label>
-            <span>Report type</span>
-            <select aria-label="Report type" value={category} onChange={(event) => setCategory(event.target.value)}>
-              <option value="Sidewalk">Sidewalk obstacle</option>
-              <option value="Crosswalk">Crosswalk / intersection</option>
-              <option value="Construction">Construction / roadwork</option>
-              <option value="Lighting">Poor lighting</option>
-              <option value="Signage">Missing or unclear signage</option>
-              <option value="Transit">Public transit access</option>
-              <option value="Other">Other</option>
-            </select>
-          </label>
-          <label>
-            <span>Severity</span>
-            <select aria-label="Severity" value={severity} onChange={(event) => setSeverity(event.target.value as IncidentReport['severity'])}>
-              <option value="LOW">Low</option>
-              <option value="MEDIUM">Medium</option>
-              <option value="HIGH">High</option>
-              <option value="CRITICAL">Critical</option>
-            </select>
-          </label>
-          <label>
-            <span>Details</span>
-            <textarea aria-label="Details" rows={5} value={description} onChange={(event) => setDescription(event.target.value)} placeholder="Describe the hazard or safety note here." />
-          </label>
-          <button className="primary-btn" onClick={addReport} disabled={saving}>
-            {saving ? 'Sending…' : <><span aria-hidden="true">📤</span> Send report</>}
-          </button>
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function CaregiverTab({ announce }: { announce: (message: string, tone?: Tone) => void }) {
-  const [overview, setOverview] = useState<CaregiverOverview | null>(null);
-  const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
-  const [locData, setLocData] = useState<Record<string, CaregiverLiveLocation | null>>({});
-  const [locLoading, setLocLoading] = useState(false);
-  const [settingsUserId, setSettingsUserId] = useState<string | null>(null);
-
-  useEffect(() => {
-    api
-      .caregiverOverview()
-      .then((res) => setOverview(res))
-      .catch(() => announce('Could not load your caregiver overview.', 'error'));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  async function toggleLocation(userId: string) {
-    if (expandedUserId === userId) {
-      setExpandedUserId(null);
-      return;
-    }
-    setExpandedUserId(userId);
-    setLocLoading(true);
-    try {
-      const res = await api.caregiverUserLocation(userId);
-      setLocData((prev) => ({ ...prev, [userId]: res }));
-      if (res.journey) {
-        announce(`Live location shared for this user's active journey.`);
-      } else {
-        announce(res.consent ? 'No active journey sharing location right now.' : 'This user has not granted live location access.');
-      }
-    } catch {
-      setLocData((prev) => ({ ...prev, [userId]: null }));
-      announce('Could not load live location for this user.', 'warning');
-    } finally {
-      setLocLoading(false);
-    }
-  }
-
-  if (!overview) {
-    return (
-      <div className="screen-grid">
-        <section className="panel">
-          <p className="muted-note" role="status" aria-live="polite">Loading your caregiver overview…</p>
-        </section>
-      </div>
-    );
-  }
-
-  return (
-    <div className="screen-grid caregiver-grid">
-      <section className="panel">
-        <div className="section-head">
-          <div>
-            <p className="topbar-kicker">caregiver</p>
-            <h2>People you support</h2>
-          </div>
-        </div>
-        {overview.blindUsers.length === 0 ? (
-          <p className="muted-note">
-            No one has listed you as a trusted contact yet. When a blind user adds your email as a trusted contact, they appear here.
-          </p>
-        ) : (
-          <ul className="settings-list">
-            {overview.blindUsers.map((u) => {
-              const loc = locData[u.id];
-              const expanded = expandedUserId === u.id;
-              return (
-                <li key={u.id} className="settings-list-item" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-                    <div className="min-w-0">
-                      <p className="settings-list-title">{u.fullName}</p>
-                      <p className="settings-list-sub">{u.email}</p>
-                    </div>
-                    <div className="control-inline" style={{ gap: 8 }}>
-                      <button className="ghost-btn" onClick={() => toggleLocation(u.id)} aria-expanded={expanded}>
-                        {expanded ? 'Hide location' : <><span aria-hidden="true">📍</span> Live location</>}
-                      </button>
-                      <button
-                        className="ghost-btn"
-                        onClick={() => setSettingsUserId(settingsUserId === u.id ? null : u.id)}
-                        aria-expanded={settingsUserId === u.id}
-                      >
-                        {settingsUserId === u.id ? 'Close settings' : <><span aria-hidden="true">🛠️</span> Adjust settings</>}
-                      </button>
-                    </div>
-                  </div>
-                  {settingsUserId === u.id && (
-                    <div style={{ marginTop: 12 }}>
-                      <WardSettingsPanel userId={u.id} wardName={u.fullName} announce={announce} />
-                    </div>
-                  )}
-                  {expanded && (
-                    <div style={{ marginTop: 12 }}>
-                      {locLoading ? (
-                        <p className="muted-note" role="status" aria-live="polite">Loading live location…</p>
-                      ) : loc && loc.journey ? (
-                        <>
-                          <MapView
-                            userLat={loc.journey.lastLat}
-                            userLng={loc.journey.lastLng}
-                            trail={loc.trail}
-                            height="260px"
-                          />
-                          <p className="muted-note" style={{ marginTop: 8 }}>
-                            {u.fullName} → {loc.journey.destination} · Last update {loc.journey.lastLocationAt ? new Date(loc.journey.lastLocationAt).toLocaleTimeString() : 'unknown'}
-                          </p>
-                        </>
-                      ) : (
-                        <p className="muted-note">
-                          {loc && !loc.consent
-                            ? 'This user has not granted you live location access.'
-                            : 'No active journey is sharing live location right now.'}
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
-
-      <section className="panel">
-        <div className="section-head">
-          <div>
-            <p className="topbar-kicker">assistance</p>
-            <h2>Open SOS requests</h2>
-          </div>
-        </div>
-        {overview.openAssistance.length === 0 ? (
-          <p className="muted-note" role="status" aria-live="polite">No open SOS requests right now.</p>
-        ) : (
-          <ul className="settings-list">
-            {overview.openAssistance.map((r) => (
-              <li key={r.id} className="settings-list-item">
-                <div className="min-w-0">
-                  <p className="settings-list-title">{r.user.fullName} — {new Date(r.createdAt).toLocaleString()}</p>
-                  <p className="settings-list-sub">{r.message}{r.locationShare ? ' · location shared' : ''}</p>
-                </div>
-                <span className="pill pill-danger">OPEN</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section className="panel">
-        <div className="section-head">
-          <div>
-            <p className="topbar-kicker">activity</p>
-            <h2>Recent journeys</h2>
-          </div>
-        </div>
-        {overview.recentJourneys.length === 0 ? (
-          <p className="muted-note" role="status" aria-live="polite">No recent journeys.</p>
-        ) : (
-          <ul className="settings-list">
-            {overview.recentJourneys.map((j) => (
-              <li key={j.id} className="settings-list-item">
-                <div className="min-w-0">
-                  <p className="settings-list-title">{j.user.fullName} → {j.destination}</p>
-                  <p className="settings-list-sub">{new Date(j.startedAt).toLocaleString()} · {j.mode}</p>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-    </div>
-  );
-}
-
-/** Remote-config panel: a caregiver adjusts the linked ward's accessibility
- *  settings from their own account. Scope is deliberately narrow — only the
- *  same accessibility fields the ward can change themselves; the AI key is
- *  surfaced read-only as hasKey and can never be read or replaced here. Every
- *  view and save is audit-logged server-side and the ward can revoke consent
- *  at any time from their contacts list. */
-function WardSettingsPanel({ userId, wardName, announce }: { userId: string; wardName: string; announce: (message: string, tone?: Tone) => void }) {
-  const [settings, setSettings] = useState<WardSettings | null>(null);
-  const [loadError, setLoadError] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [savedAt, setSavedAt] = useState<string | null>(null);
-  const [draft, setDraft] = useState<WardPreferencesPatch>({});
-  const [aiProvider, setAiProvider] = useState<'GEMINI' | 'OPENAI_COMPATIBLE'>('GEMINI');
-  const [aiModel, setAiModel] = useState('');
-  const [aiBaseUrl, setAiBaseUrl] = useState('');
-  const [aiKey, setAiKey] = useState('');
-
-  useEffect(() => {
-    api
-      .caregiverWardPreferences(userId)
-      .then((s) => {
-        setSettings(s);
-        setDraft(s.preferences ? {
-          speechRate: s.preferences.speechRate,
-          voiceName: s.preferences.voiceName ?? undefined,
-          instructionDetail: s.preferences.instructionDetail,
-          vibrationEnabled: s.preferences.vibrationEnabled,
-          audioEnabled: s.preferences.audioEnabled,
-          reducedMotion: s.preferences.reducedMotion,
-          textScale: s.preferences.textScale,
-          lowConnectivityMode: s.preferences.lowConnectivityMode,
-          imageRetentionHours: s.preferences.imageRetentionHours,
-        } : {});
-        setAiProvider(s.aiProvider.provider);
-        setAiModel(s.aiProvider.model ?? '');
-        setAiBaseUrl(s.aiProvider.baseUrl ?? '');
-      })
-      .catch(() => setLoadError(true));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId]);
-
-  if (loadError) {
-    return <p className="muted-note">Could not load settings. This user may not have granted you remote-care access.</p>;
-  }
-  if (!settings) {
-    return <p className="muted-note" role="status" aria-live="polite">Loading settings…</p>;
-  }
-
-  async function save() {
-    setSaving(true);
-    try {
-      const res = await api.updateCaregiverWardPreferences(userId, draft);
-      setSettings(res);
-      setSavedAt(new Date().toLocaleTimeString());
-      announce(`Settings for ${wardName} saved.`, 'online');
-    } catch {
-      announce('Could not save settings for this user.', 'error');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function applyAiPreset(presetId: string) {
-    const preset = FREE_MODEL_PRESETS.find((p) => p.id === presetId);
-    if (!preset) return;
-    setAiProvider(preset.provider);
-    setAiModel(preset.model);
-    setAiBaseUrl(preset.baseUrl ?? '');
-    announce(`${preset.label} selected for ${wardName}. ${preset.keyHint}`, 'online');
-  }
-
-  async function saveAiProvider() {
-    if (saving) return;
-    setSaving(true);
-    try {
-      const res = await api.updateCaregiverWardPreferences(userId, {
-        aiProvider: {
-          provider: aiProvider,
-          model: aiModel.trim() || null,
-          baseUrl: aiProvider === 'OPENAI_COMPATIBLE' ? aiBaseUrl.trim() || null : null,
-          ...(aiKey.trim() ? { apiKey: aiKey.trim() } : {}),
-        },
-      });
-      setSettings(res);
-      setAiKey('');
-      setSavedAt(new Date().toLocaleTimeString());
-      announce(`AI provider for ${wardName} saved. ${res.aiProvider.hasKey ? `Key on file ${res.aiProvider.maskedKey ?? ''}`.trim() : 'No key stored yet — AI will use the platform provider or demo mode.'}`, 'online');
-    } catch (error) {
-      announce(error instanceof ApiError ? error.message : `Could not save the AI provider for ${wardName}.`, 'error');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function removeAiKey() {
-    if (saving) return;
-    setSaving(true);
-    try {
-      const res = await api.updateCaregiverWardPreferences(userId, {
-        aiProvider: { provider: aiProvider, apiKey: null },
-      });
-      setSettings(res);
-      setAiKey('');
-      announce(`AI key removed for ${wardName}.`, 'online');
-    } catch (error) {
-      announce(error instanceof ApiError ? error.message : `Could not remove the AI key for ${wardName}.`, 'error');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  const d = { ...(settings.preferences ?? {}), ...draft } as Partial<import('./api').AccessibilityPreferences> & WardPreferencesPatch;
-
-  return (
-    <div className="ward-settings-panel" style={{ display: 'grid', gap: 10 }}>
-      <p className="muted-note">
-        Remote care for <strong>{settings.ward.fullName}</strong> · preferred language {settings.ward.preferredLanguage}.
-        Every change below is logged, the AI key is never visible once saved (only a masked preview like ••1234), and{' '}
-        {settings.ward.fullName.split(' ')[0] ?? 'this user'} can revoke access or change anything at any time.
-      </p>
-
-      <div className="control-inline" style={{ flexWrap: 'wrap', gap: 8 }}>
-        <label className="settings-row" style={{ gap: 8 }}>
-          <span>Speech rate {d.speechRate != null && <strong>{Number(d.speechRate).toFixed(2)}x</strong>}</span>
-          <input
-            type="range" min={0.5} max={2} step={0.05}
-            aria-label={`${wardName} speech rate`}
-            value={d.speechRate ?? 1}
-            onChange={(e) => setDraft((p) => ({ ...p, speechRate: Number(e.target.value) }))}
-          />
-        </label>
-        <label className="settings-row" style={{ gap: 8 }}>
-          <span>Instruction detail {d.instructionDetail != null && <strong>{Number(d.instructionDetail)}</strong>}</span>
-          <input
-            type="range" min={1} max={3} step={1}
-            aria-label={`${wardName} instruction detail level`}
-            value={d.instructionDetail ?? 2}
-            onChange={(e) => setDraft((p) => ({ ...p, instructionDetail: Number(e.target.value) }))}
-          />
-        </label>
-        <label className="settings-row" style={{ gap: 8 }}>
-          <span>Text scale {d.textScale != null && <strong>{Number(d.textScale).toFixed(2)}x</strong>}</span>
-          <input
-            type="range" min={1} max={1.6} step={0.05}
-            aria-label={`${wardName} text scale`}
-            value={d.textScale ?? 1}
-            onChange={(e) => setDraft((p) => ({ ...p, textScale: Number(e.target.value) }))}
-          />
-        </label>
-        <label className="settings-row" style={{ gap: 8 }}>
-          <span>Voice</span>
-          <input
-            type="text"
-            aria-label={`${wardName} preferred voice name`}
-            placeholder="Device default"
-            value={d.voiceName ?? ''}
-            onChange={(e) => setDraft((p) => ({ ...p, voiceName: e.target.value || undefined }))}
-          />
-        </label>
-      </div>
-
-      <div className="control-inline" style={{ flexWrap: 'wrap', gap: 8 }}>
-        {([
-          ['audioEnabled', 'Audio descriptions'],
-          ['vibrationEnabled', 'Vibration cues'],
-          ['reducedMotion', 'Reduced motion'],
-          ['lowConnectivityMode', 'Low-connectivity mode'],
-        ] as Array<[keyof WardPreferencesPatch, string]>).map(([key, label]) => (
-          <button
-            key={key}
-            className="ghost-btn"
-            aria-pressed={Boolean(d[key])}
-            onClick={() => setDraft((p) => ({ ...p, [key]: !p[key] }))}
-          >
-            {label}: {d[key] ? 'On' : 'Off'}
-          </button>
-        ))}
-      </div>
-
-      <div className="control-inline" style={{ flexWrap: 'wrap', gap: 8 }}>
-        <button className="primary-btn" onClick={save} disabled={saving}>
-          {saving ? 'Saving…' : 'Save settings'}
-        </button>
-        {savedAt && <span className="pill pill-success" role="status">Saved {savedAt}</span>}
-      </div>
-
-      <div className="settings-section" style={{ borderTop: '1px solid rgba(128,128,128,0.3)', paddingTop: 10 }}>
-        <h3>AI provider for {wardName}</h3>
-        <p className="settings-hint">
-          Set up the AI that powers scene descriptions and answers for this user — for example a free Groq or Cerebras
-          key. The key is stored encrypted and is never shown back; {settings.ward.fullName.split(' ')[0] ?? 'this user'}
-          {' '}can change or remove it anytime in their own AI settings.
-        </p>
-        <div className="settings-row">
-          <span>Free preset</span>
-          <div className="control-inline" role="group" aria-label={`Free model presets for ${wardName}`}>
-            {FREE_MODEL_PRESETS.map((preset) => (
-              <button key={preset.id} className="ghost-btn" onClick={() => applyAiPreset(preset.id)}>
-                {preset.label}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="settings-row">
-          <span>Provider</span>
-          <select
-            value={aiProvider}
-            onChange={(event) => setAiProvider(event.target.value === 'OPENAI_COMPATIBLE' ? 'OPENAI_COMPATIBLE' : 'GEMINI')}
-            aria-label={`AI provider for ${wardName}`}
-            style={{ maxWidth: '100%' }}
-          >
-            <option value="GEMINI">Google Gemini</option>
-            <option value="OPENAI_COMPATIBLE">OpenAI-compatible (Groq, Cerebras, OpenRouter…)</option>
-          </select>
-        </div>
-        <div className="settings-row">
-          <span>Model</span>
-          <input
-            type="text"
-            value={aiModel}
-            onChange={(event) => setAiModel(event.target.value)}
-            placeholder={aiProvider === 'GEMINI' ? 'gemini-3.6-flash' : 'llama-3.3-70b-versatile'}
-            aria-label={`AI model for ${wardName}`}
-            style={{ maxWidth: '100%' }}
-          />
-        </div>
-        {aiProvider === 'OPENAI_COMPATIBLE' && (
-          <div className="settings-row">
-            <span>API base URL</span>
-            <input
-              type="url"
-              value={aiBaseUrl}
-              onChange={(event) => setAiBaseUrl(event.target.value)}
-              placeholder="https://api.groq.com/openai/v1"
-              aria-label={`API base URL for ${wardName}`}
-              style={{ maxWidth: '100%' }}
-            />
-          </div>
-        )}
-        <div className="settings-row">
-          <span>API key</span>
-          <input
-            type="password"
-            value={aiKey}
-            onChange={(event) => setAiKey(event.target.value)}
-            placeholder={settings.aiProvider.hasKey ? `Stored (${settings.aiProvider.maskedKey ?? 'saved'}) — type to replace` : 'Paste an API key'}
-            aria-label={`API key for ${wardName}`}
-            autoComplete="off"
-            style={{ maxWidth: '100%' }}
-          />
-        </div>
-        <div className="control-inline">
-          <button className="secondary-btn" disabled={saving} onClick={saveAiProvider}>
-            {saving ? 'Saving…' : 'Save AI provider'}
-          </button>
-          {settings.aiProvider.hasKey && (
-            <button className="ghost-btn" disabled={saving} onClick={removeAiKey}>
-              Remove key
-            </button>
-          )}
-        </div>
-      </div>
-
-      <p className="muted-note">
-        AI provider currently: {settings.aiProvider.provider}
-        {settings.aiProvider.model ? ` · ${settings.aiProvider.model}` : ''} ·{' '}
-        {settings.aiProvider.hasKey ? `key on file ${settings.aiProvider.maskedKey ?? ''}`.trim() : 'no AI key yet (set one above, or the platform AI / demo mode applies)'}.
-      </p>
-    </div>
-  );
-}
-
-function SafeJourneyTab({
-  contacts,
-  onNeedContacts,
-  announce,
-  speak,
-  permissionService,
-}: {
-  contacts: TrustedContact[] | null;
-  onNeedContacts: () => void;
-  announce: (message: string, tone?: Tone) => void;
-  speak: (text: string, priority?: SpeechPriority, dedupeKey?: string) => void;
-  permissionService: PermissionService;
-}) {
-  const [journey, setJourney] = useState<SafeJourney | null>(null);
-  const [destination, setDestination] = useState('');
-  const [eta, setEta] = useState('');
-  const [contactId, setContactId] = useState('');
-  const [intervalMin, setIntervalMin] = useState(15);
-  const [shareLive, setShareLive] = useState(true);
-  const [starting, setStarting] = useState(false);
-  const [error, setError] = useState('');
-  const [battery, setBattery] = useState<number | null>(null);
-  const [livePos, setLivePos] = useState<{ lat: number; lng: number } | null>(null);
-  const locRef = useRef<{ watchId: number; timer: ReturnType<typeof setInterval> | null } | null>(null);
-
-  const loadActive = useCallback(() => {
-    api
-      .activeJourney()
-      .then((res) => {
-        setJourney(res.journey);
-        // This tab unmounts on tab switch, which clears the geolocation watch.
-        // If we come back to an in-flight journey, the watch MUST restart —
-        // otherwise monitoring silently stops while the UI implies otherwise.
-        if (res.journey && !locRef.current) beginLocation(res.journey.id);
-      })
-      .catch(() => setJourney(null));
-  }, []);
-
-  useEffect(() => {
-    loadActive();
-    // Battery level: only read if user has explicitly granted battery permission.
-    if (permissionService.get('battery').state === 'allowed') {
-      const nav = navigator as Navigator & { getBattery?: () => Promise<{ level: number }> };
-      nav.getBattery?.().then((b) => setBattery(Math.round(b.level * 100))).catch(() => {});
-    }
-    return () => {
-      if (locRef.current) {
-        navigator.geolocation.clearWatch(locRef.current.watchId);
-        if (locRef.current.timer) clearInterval(locRef.current.timer);
-        locRef.current = null;
-      }
-    };
-  }, [loadActive, permissionService]);
-
-  async function start() {
-    if (!destination.trim()) {
-      announce('Enter a destination to start a safe journey.', 'warning');
-      return;
-    }
-    setStarting(true);
-    setError('');
-    try {
-      const res = await api.startJourney({
-        destination: destination.trim(),
-        eta: eta || undefined,
-        trustedContactId: contactId || undefined,
-        checkInIntervalMinutes: intervalMin,
-        shareLive,
-      });
-      setJourney(res.journey);
-      speak(`Safe journey started to ${res.journey.destination}. I will monitor your progress.`, 5, 'journey-start');
-      beginLocation(res.journey.id);
-    } catch (e) {
-      const message = e instanceof ApiError ? e.message : 'Could not start journey.';
-      setError(message);
-      announce(message, 'error');
-    } finally {
-      setStarting(false);
-    }
-  }
-
-  // Reports location periodically + checks deviation while the journey is active.
-  function beginLocation(jid: string) {
-    if (!('geolocation' in navigator)) return;
-    if (locRef.current) navigator.geolocation.clearWatch(locRef.current.watchId);
-    const watchId = navigator.geolocation.watchPosition(
-      (pos) => {
-        const { latitude, longitude, accuracy } = pos.coords;
-        setLivePos({ lat: latitude, lng: longitude });
-        api.journeyLocation(jid, { lat: latitude, lng: longitude, accuracy, battery: battery ?? undefined }).catch(() => {});
-        api.journeyDeviation(jid, latitude, longitude).then((d) => {
-          if (d.action === 'prompt') {
-            announce(`You have moved about ${d.deviationMeters} metres off your route. Are you safe?`, 'warning');
-            speak(`You have moved about ${d.deviationMeters} metres off your route. Are you safe?`, 3, `deviation-${Math.floor(d.deviationMeters / 100)}`);
-          } else if (d.action === 'escalate') {
-            announce('No response received. Your trusted contact has been alerted.', 'error');
-            speak('No response received. Your trusted contact has been alerted.', 1, 'escalated');
-          }
-        }).catch(() => {});
-      },
-      (err) => announce(`Location error: ${err.message}`, 'warning'),
-      { enableHighAccuracy: true, maximumAge: 10_000 },
-    );
-    const timer = setInterval(() => {
-      api.activeJourney().then((res) => {
-        setJourney(res.journey);
-        if (res.journey?.missedArrival) {
-          announce(`Your expected arrival time has passed. Are you safe?`, 'warning');
-          speak(`Your expected arrival time has passed. Are you safe?`, 3, 'missed-arrival');
-        } else if (res.journey?.promptDue) {
-          announce(`Check-in due. Are you safe?`, 'warning');
-          speak(`Check-in due. Are you safe?`, 3, 'checkin-due');
-        }
-      }).catch(() => {});
-    }, 60_000);
-    locRef.current = { watchId, timer };
-  }
-
-  async function checkIn() {
-    if (!journey) return;
-    await api.journeyCheckIn(journey.id);
-    announce('Checked in. I will keep monitoring.', 'online');
-    speak('Checked in. I will keep monitoring.');
-    loadActive();
-  }
-
-  async function lost() {
-    if (!journey) return;
-    await api.journeyLost(journey.id);
-    announce('Help requested. Your trusted contact has been notified.', 'error');
-    speak('Help requested. Your trusted contact has been notified.');
-  }
-
-  async function end() {
-    if (!journey) return;
-    await api.endJourney(journey.id);
-    if (locRef.current) {
-      navigator.geolocation.clearWatch(locRef.current.watchId);
-      if (locRef.current.timer) clearInterval(locRef.current.timer);
-      locRef.current = null;
-    }
-    announce('Journey ended. You are safe.', 'online');
-    speak('Journey ended. You are safe.');
-    setLivePos(null);
-    setJourney(null);
-  }
-
-  return (
-    <div className="screen-grid journey-grid">
-      <section className="panel">
-        <div className="section-head">
-          <div>
-            <p className="topbar-kicker">safe journey</p>
-            <h2>{journey ? 'Journey in progress' : 'Start a safe journey'}</h2>
-          </div>
-        </div>
-
-        {journey ? (
-          <div className="journey-active">
-            <MapView
-              userLat={livePos?.lat ?? journey.lastLat}
-              userLng={livePos?.lng ?? journey.lastLng}
-              height="320px"
-            />
-            <div className="settings-row">
-              <span>Destination</span>
-              <strong>{journey.destination}</strong>
-            </div>
-            <div className="settings-row">
-              <span>Status</span>
-              <strong>{journey.status}</strong>
-            </div>
-            {journey.trustedContact && (
-              <div className="settings-row">
-                <span>Monitored by</span>
-                <strong>{journey.trustedContact.name}</strong>
-              </div>
-            )}
-            {journey.eta && (
-              <div className="settings-row">
-                <span>Expected arrival</span>
-                <strong>{new Date(journey.eta).toLocaleTimeString()}</strong>
-              </div>
-            )}
-            {journey.missedArrival && (
-              <p role="alert" style={{ color: 'var(--danger)' }}>
-                Your expected arrival time has passed.
-              </p>
-            )}
-            <div className="control-inline" style={{ marginTop: 16 }}>
-              <button className="secondary-btn" onClick={checkIn}>
-                <span aria-hidden="true">✅</span> I'm safe (check-in)
-              </button>
-              <button className="secondary-btn" onClick={lost} style={{ background: 'var(--danger)', color: '#fff' }}>
-                <span aria-hidden="true">🆘</span> I'm lost
-              </button>
-              <button className="ghost-btn" onClick={end}>
-                End journey
-              </button>
-            </div>
-            <p className="muted-note" style={{ marginTop: 12 }}>
-              {journey.shareLive ? 'Live location sharing is on for your trusted contact.' : 'Live location sharing is off.'} · Check-in every {journey.checkInIntervalMinutes} min
-            </p>
-          </div>
-        ) : (
-          <div className="form-stack">
-            <label>
-              <span>Destination</span>
-              <input aria-label="Destination" value={destination} onChange={(e) => setDestination(e.target.value)} placeholder="e.g. Home, Hospital, Work" />
-            </label>
-            <label>
-              <span>Expected arrival (optional)</span>
-              <input aria-label="Expected arrival (optional)" type="datetime-local" value={eta} onChange={(e) => setEta(e.target.value)} />
-            </label>
-            <label>
-              <span>Trusted contact (optional)</span>
-              {contacts && contacts.length > 0 ? (
-                <select value={contactId} onChange={(e) => setContactId(e.target.value)}>
-                  <option value="">No contact</option>
-                  {contacts.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-              ) : (
-                <button className="ghost-btn" onClick={onNeedContacts}>
-                  Add a trusted contact in SOS first
-                </button>
-              )}
-            </label>
-            <label>
-              <span>Check-in every (minutes)</span>
-              <select aria-label="Check-in every (minutes)" value={intervalMin} onChange={(e) => setIntervalMin(Number(e.target.value))}>
-                {[5, 10, 15, 30, 60].map((n) => (
-                  <option key={n} value={n}>{n} minutes</option>
-                ))}
-              </select>
-            </label>
-            <label className="settings-row">
-              <span>Share live location</span>
-              <button className="ghost-btn" aria-pressed={shareLive} onClick={() => setShareLive(!shareLive)}>
-                {shareLive ? 'On' : 'Off'}
-              </button>
-            </label>
-            {error && (
-              <p role="alert" style={{ color: 'var(--danger)' }}>{error}</p>
-            )}
-            <button className="primary-btn" onClick={start} disabled={starting}>
-              {starting ? 'Starting…' : <><span aria-hidden="true">🛡️</span> Start safe journey</>}
-            </button>
-            <p className="muted-note">
-              Watchora will ask you if you deviate from your route or miss your arrival, and alert your trusted contact if you do not respond.
-            </p>
-          </div>
-        )}
-      </section>
-    </div>
-  );
-}
-
-function SettingsTab({
-  user,
-  language,
-  themeMode,
-  onThemeChange,
-  voiceRate,
-  onVoiceRateChange,
-  voice,
-  voices,
-  onVoiceChange,
-  onTestVoice,
-  hapticSettings,
-  onHapticSettingsChange,
-  onTestHaptic,
-  voiceSettings,
-  onVoiceSettingsChange,
-  onLogout,
-  readingEntries,
-  onDeleteReading,
-  announce,
-  speak,
-}: {
-  user: PublicUser;
-  language: string;
-  themeMode: 'Light' | 'Dark';
-  onThemeChange: (mode: 'Light' | 'Dark') => void;
-  voiceRate: number;
-  onVoiceRateChange: (updater: (current: number) => number) => void;
-  voice: string;
-  voices: TtsVoice[] | null;
-  onVoiceChange: (voice: string) => void;
-  onTestVoice: () => void;
-  hapticSettings: HapticSettings;
-  onHapticSettingsChange: (updater: (current: HapticSettings) => HapticSettings) => void;
-  onTestHaptic: () => void;
-  voiceSettings: VoiceSettings;
-  onVoiceSettingsChange: (patch: Partial<VoiceSettings>) => void;
-  onLogout: () => void;
-  readingEntries: ReadingEntry[] | null;
-  onDeleteReading: (id: string) => void;
-  announce: (message: string, tone?: Tone) => void;
-  speak: (text: string, priority?: SpeechPriority, dedupeKey?: string, rateOverride?: number) => void;
-}) {
-  // Group voices by language so the picker reads naturally (e.g. हिन्दी).
-  const voiceGroups: Array<[string, TtsVoice[]]> = [];
-  if (voices) {
-    const byLang = new Map<string, TtsVoice[]>();
-    for (const v of voices) {
-      const key = `${v.language} · ${v.native}`;
-      const arr = byLang.get(key) ?? [];
-      arr.push(v);
-      byLang.set(key, arr);
-    }
-    for (const [lang, list] of byLang) voiceGroups.push([lang, list]);
-    voiceGroups.sort((a, b) => a[0].localeCompare(b[0]));
-  }
-
-  return (
-    <div className="screen-grid settings-grid">
-      <section className="panel settings-profile-panel">
-        <div className="settings-profile">
-          <div className="settings-avatar">👤</div>
-          <div>
-            <h2>{user.fullName}</h2>
-            <p>{user.email}</p>
-          </div>
-        </div>
-        <div className="settings-section">
-          <h3>Voice & audio</h3>
-          <div className="settings-row">
-            <span>Language</span>
-            <strong>{language}</strong>
-          </div>
-          <div className="settings-row">
-            <span>Neural voice</span>
-            <select
-              value={voice}
-              onChange={(event) => onVoiceChange(event.target.value)}
-              aria-label="Neural voice"
-              style={{ maxWidth: '100%' }}
-            >
-              {voiceGroups.length === 0 ? (
-                <option value={voice}>{voice}</option>
-              ) : (
-                voiceGroups.map(([lang, list]) => (
-                  <optgroup key={lang} label={lang}>
-                    {list.map((v) => (
-                      <option key={v.shortName} value={v.shortName}>
-                        {v.gender === 'Female' ? '👩' : '👨'} {v.shortName.replace(/-Neural$/, '')}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))
-              )}
-            </select>
-          </div>
-          <div className="settings-row">
-            <span>Reading speed</span>
-            <div className="control-inline">
-              <button className="ghost-btn" aria-label="Slower" onClick={() => onVoiceRateChange((current) => Math.max(0.7, Number((current - 0.1).toFixed(2))))}>
-                -
-              </button>
-              <strong>{voiceRate.toFixed(2)}x</strong>
-              <button className="ghost-btn" aria-label="Faster" onClick={() => onVoiceRateChange((current) => Math.min(1.5, Number((current + 0.1).toFixed(2))))}>
-                +
-              </button>
-            </div>
-          </div>
-          <div className="settings-row">
-            <span>Detail level</span>
-            <div className="control-inline" role="radiogroup" aria-label="Speech detail level">
-              {([0, 1, 2] as const).map((level) => (
-                <button
-                  key={level}
-                  role="radio"
-                  aria-checked={voiceSettings.verbosity === level}
-                  className={`ghost-btn ${voiceSettings.verbosity === level ? 'active' : ''}`}
-                  onClick={() => onVoiceSettingsChange({ verbosity: level })}
-                >
-                  {level === 0 ? 'Essential' : level === 1 ? 'Standard' : 'Detailed'}
-                </button>
-              ))}
-            </div>
-          </div>
-          <p className="settings-hint">
-            Essential speaks only hazards, deviations and emergencies. Standard adds navigation and answers. Detailed adds background narration. Emergency warnings always speak, at every level.
-          </p>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={!voiceSettings.pushToTalk}
-            className={`toggle-row ${!voiceSettings.pushToTalk ? 'on' : 'off'}`}
-            onClick={() => onVoiceSettingsChange({ pushToTalk: !voiceSettings.pushToTalk })}
-          >
-            <span>
-              <strong>Hands-free voice control</strong>
-              <p>Watchora listens continuously so you can speak commands without touching the screen. Say "Hey Watchora", then your command.</p>
-            </span>
-            <span aria-hidden="true">{!voiceSettings.pushToTalk ? 'On' : 'Off'}</span>
-          </button>
-          {!voiceSettings.pushToTalk && (
-            <button
-              type="button"
-              role="switch"
-              aria-checked={voiceSettings.wakePhraseEnabled}
-              className={`toggle-row ${voiceSettings.wakePhraseEnabled ? 'on' : 'off'}`}
-              onClick={() => onVoiceSettingsChange({ wakePhraseEnabled: !voiceSettings.wakePhraseEnabled })}
-            >
-              <span>
-                <strong>Wake phrase</strong>
-                <p>Only act after hearing "Hey Watchora". Keeps casual conversation private. Turn off to respond to every command directly.</p>
-              </span>
-              <span aria-hidden="true">{voiceSettings.wakePhraseEnabled ? 'On' : 'Off'}</span>
-            </button>
-          )}
-          <button className="secondary-btn" onClick={onTestVoice}>
-            <span aria-hidden="true">🔊</span> Test voice
-          </button>
-        </div>
-        <div className="settings-section">
-          <h3>Hazard alerts</h3>
-          <p className="settings-hint">
-            Controls for the local, camera-based hazard layer (Assist tab). Follows a
-            fail-silent design: when detection confidence is low, nothing fires rather
-            than guessing — see the audit notes in docs/yolo-ocr-slam-plan.md.
-          </p>
-          <div className="settings-row">
-            <span>Vibration</span>
-            <button
-              className="ghost-btn"
-              aria-pressed={hapticSettings.hapticsEnabled}
-              onClick={() => onHapticSettingsChange((current) => ({ ...current, hapticsEnabled: !current.hapticsEnabled }))}
-            >
-              {hapticSettings.hapticsEnabled ? 'On' : 'Off'}
-            </button>
-          </div>
-          <div className="settings-row">
-            <span>Alert tones</span>
-            <button
-              className="ghost-btn"
-              aria-pressed={hapticSettings.toneEnabled}
-              onClick={() => onHapticSettingsChange((current) => ({ ...current, toneEnabled: !current.toneEnabled }))}
-            >
-              {hapticSettings.toneEnabled ? 'On' : 'Off'}
-            </button>
-          </div>
-          <div className="settings-row">
-            <span>Intensity</span>
-            <div className="control-inline">
-              {(['low', 'medium', 'high'] as const).map((level) => (
-                <button
-                  key={level}
-                  className={`ghost-btn ${hapticSettings.intensity === level ? 'active' : ''}`}
-                  aria-pressed={hapticSettings.intensity === level}
-                  onClick={() => onHapticSettingsChange((current) => ({ ...current, intensity: level }))}
-                >
-                  {level}
-                </button>
-              ))}
-            </div>
-          </div>
-          <button className="secondary-btn" onClick={onTestHaptic}>
-            <span aria-hidden="true">📳</span> Test hazard alert
-          </button>
-        </div>
-      </section>
-      <section className="panel settings-panel-stack">
-        <AiProviderSection announce={announce} speak={(text) => speak(text)} />
-        <div className="settings-section">
-          <h3>Interface</h3>
-          <button className="ghost-btn" onClick={() => onThemeChange(themeMode === 'Light' ? 'Dark' : 'Light')}>
-            Theme: {themeMode}
-          </button>
-        </div>
-        <div className="settings-section">
-          <h3>Account</h3>
-          <div className="settings-row">
-            <span>Role</span>
-            <strong>{user.role}</strong>
-          </div>
-          <button className="secondary-btn" onClick={onLogout}>
-            Log out
-          </button>
-        </div>
-        <div className="settings-section">
-          <h3>Reading history</h3>
-          {readingEntries === null ? (
-            <p className="muted-note" role="status" aria-live="polite">Loading…</p>
-          ) : readingEntries.length === 0 ? (
-            <p className="muted-note" role="status" aria-live="polite">No saved readings yet. In Assist mode, switch to Reading and use “Save to reading history”.</p>
-          ) : (
-            <ul className="settings-list">
-              {readingEntries.slice(0, 10).map((entry) => (
-                <li key={entry.id} className="settings-list-item">
-                  <div className="min-w-0">
-                    <p className="settings-list-title">{entry.source}</p>
-                    <p className="settings-list-sub">{new Date(entry.createdAt).toLocaleString()}</p>
-                  </div>
-                  <button className="ghost-btn" onClick={() => onDeleteReading(entry.id)} aria-label="Delete reading entry">
-                    Delete
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </section>
-    </div>
-  );
-}
-
-function AdminTab({ announce }: { announce: (message: string, tone?: Tone) => void }) {
-  const [users, setUsers] = useState<AdminUser[] | null>(null);
-  const [incidents, setIncidents] = useState<AdminIncident[] | null>(null);
-  const [assistanceRequests, setAssistanceRequests] = useState<AdminAssistanceRequest[] | null>(null);
-  const [aiStats, setAiStats] = useState<AiStats | null>(null);
-  const [prompts, setPrompts] = useState<PromptVersion[] | null>(null);
-  const [promptMode, setPromptMode] = useState<PromptVersion['mode']>('NAVIGATION');
-  const [promptText, setPromptText] = useState('');
-  const [section, setSection] = useState<'users' | 'incidents' | 'sos' | 'ai' | 'prompts'>('users');
-
-  useEffect(() => {
-    api
-      .adminListUsers()
-      .then((res) => setUsers(res.users))
-      .catch(() => announce('Could not load users.', 'error'));
-    api
-      .adminListIncidents()
-      .then((res) => setIncidents(res.incidents))
-      .catch(() => announce('Could not load incidents.', 'error'));
-    api
-      .adminListAssistanceRequests()
-      .then((res) => setAssistanceRequests(res.requests))
-      .catch(() => announce('Could not load SOS requests.', 'error'));
-    api
-      .adminAiStats()
-      .then(setAiStats)
-      .catch(() => announce('Could not load AI usage stats.', 'error'));
-    api
-      .adminListPrompts()
-      .then((res) => setPrompts(res.prompts))
-      .catch(() => announce('Could not load prompts.', 'error'));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  async function setRole(id: string, role: AdminUser['role']) {
-    try {
-      const { user } = await api.adminSetUserRole(id, role);
-      setUsers((prev) => (prev ?? []).map((u) => (u.id === id ? user : u)));
-      announce('Role updated.', 'online');
-    } catch (error) {
-      announce(error instanceof ApiError ? error.message : 'Could not update role.', 'error');
-    }
-  }
-
-  async function setActive(id: string, isActive: boolean) {
-    try {
-      const { user } = await api.adminSetUserActive(id, isActive);
-      setUsers((prev) => (prev ?? []).map((u) => (u.id === id ? user : u)));
-      announce(isActive ? 'User reactivated.' : 'User deactivated.', 'online');
-    } catch (error) {
-      announce(error instanceof ApiError ? error.message : 'Could not update user.', 'error');
-    }
-  }
-
-  async function removeIncident(id: string) {
-    try {
-      await api.adminDeleteIncident(id);
-      setIncidents((prev) => (prev ?? []).filter((i) => i.id !== id));
-      announce('Incident removed.', 'online');
-    } catch (error) {
-      announce(error instanceof ApiError ? error.message : 'Could not remove incident.', 'error');
-    }
-  }
-
-  async function setIncidentStatus(id: string, status: 'OPEN' | 'REVIEWED' | 'REMOVED') {
-    try {
-      await api.adminSetIncidentStatus(id, status);
-      announce(`Incident marked ${status.toLowerCase()}.`, 'online');
-    } catch (error) {
-      announce(error instanceof ApiError ? error.message : 'Could not update incident status.', 'error');
-    }
-  }
-
-  async function createPrompt() {
-    if (!promptText.trim()) {
-      announce('Enter a prompt first.', 'warning');
-      return;
-    }
-    try {
-      await api.adminCreatePrompt({ mode: promptMode, prompt: promptText.trim() });
-      setPromptText('');
-      const res = await api.adminListPrompts();
-      setPrompts(res.prompts);
-      announce('Prompt version created.', 'online');
-    } catch (error) {
-      announce(error instanceof ApiError ? error.message : 'Could not create prompt.', 'error');
-    }
-  }
-
-  async function activatePrompt(id: string) {
-    try {
-      await api.adminActivatePrompt(id);
-      const res = await api.adminListPrompts();
-      setPrompts(res.prompts);
-      announce('Prompt activated.', 'online');
-    } catch (error) {
-      announce(error instanceof ApiError ? error.message : 'Could not activate prompt.', 'error');
-    }
-  }
-
-  return (
-    <div className="screen-grid settings-grid">
-      <section className="panel list-panel">
-        <div className="section-head">
-          <h2>Admin</h2>
-        </div>
-        <div className="analysis-mode-row" role="tablist" aria-label="Admin sections">
-          {(['users', 'incidents', 'sos', 'ai', 'prompts'] as const).map((key) => (
-            <button
-              key={key}
-              role="tab"
-              aria-selected={section === key}
-              className={`ghost-btn ${section === key ? 'active' : ''}`}
-              onClick={() => setSection(key)}
-            >
-              {key === 'users' ? 'Users' : key === 'incidents' ? 'Incidents' : key === 'sos' ? 'SOS' : key === 'ai' ? 'AI usage' : 'Prompts'}
-            </button>
-          ))}
-        </div>
-
-        {section === 'users' &&
-          (users === null ? (
-            <p className="soft-note" role="status" aria-live="polite">Loading…</p>
-          ) : (
-            <div className="route-list">
-              {users.map((u) => (
-                <div key={u.id} className="route-card">
-                  <div>
-                    <strong>{u.fullName}</strong>
-                    <div className="route-meta">
-                      {u.email} · {u.isActive ? 'Active' : 'Deactivated'}
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <select value={u.role} onChange={(event) => setRole(u.id, event.target.value as AdminUser['role'])}>
-                      <option value="BLIND_USER">Blind user</option>
-                      <option value="CAREGIVER">Caregiver</option>
-                      <option value="ADMIN">Admin</option>
-                    </select>
-                    <button className="ghost-btn" onClick={() => setActive(u.id, !u.isActive)}>
-                      {u.isActive ? 'Deactivate' : 'Reactivate'}
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ))}
-
-        {section === 'incidents' &&
-          (incidents === null ? (
-            <p className="soft-note" role="status" aria-live="polite">Loading…</p>
-          ) : (
-            <div className="feed-list">
-              {incidents.map((incident) => (
-                <div className="feed-card" key={incident.id}>
-                  <div className="feed-head">
-                    <strong>{incident.category}</strong>
-                    <span>{incident.severity}</span>
-                  </div>
-                  <p>{incident.description}</p>
-                  <div className="feed-footer">
-                    <span>
-                      {incident.reporter.fullName} ({incident.reporter.email})
-                    </span>
-                    <button className="ghost-btn" onClick={() => removeIncident(incident.id)}>
-                      Remove
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ))}
-
-        {section === 'sos' &&
-          (assistanceRequests === null ? (
-            <p className="soft-note" role="status" aria-live="polite">Loading…</p>
-          ) : (
-            <div className="sos-timeline">
-              {assistanceRequests.map((req) => (
-                <div className="timeline-item" key={req.id}>
-                  <div>
-                    <strong>{req.user.fullName}</strong> ({req.user.email}) — {new Date(req.createdAt).toLocaleString()}
-                  </div>
-                  <div>{req.message}</div>
-                  <span className={`pill ${req.status === 'RESOLVED' ? 'pill-success' : 'pill-danger'}`}>{req.status}</span>
-                </div>
-              ))}
-            </div>
-          ))}
-
-        {section === 'ai' &&
-          (aiStats === null ? (
-            <p className="soft-note" role="status" aria-live="polite">Loading…</p>
-          ) : (
-            <div className="stats-cards">
-              <div className="metric-card stat-big">
-                <span>Total requests</span>
-                <strong>{aiStats.total}</strong>
-              </div>
-              <div className="metric-card stat-big">
-                <span>Success rate</span>
-                <strong>{aiStats.total ? Math.round((aiStats.successCount / aiStats.total) * 100) : 0}%</strong>
-              </div>
-              <div className="metric-card stat-big">
-                <span>Live vs demo</span>
-                <strong>
-                  {aiStats.liveCount} / {aiStats.demoCount}
-                </strong>
-              </div>
-              <div className="metric-card stat-big">
-                <span>Avg latency</span>
-                <strong>{aiStats.averageLatencyMs ?? '—'} ms</strong>
-              </div>
-              <div className="panel" style={{ gridColumn: '1 / -1', padding: 16 }}>
-                <h3>By mode</h3>
-                {aiStats.byMode.map((entry) => (
-                  <div className="settings-row" key={entry.mode}>
-                    <span>{entry.mode}</span>
-                    <strong>{entry.count}</strong>
-                  </div>
-                ))}
-                {aiStats.recentErrors.length > 0 ? (
-                  <>
-                    <h3>Recent errors</h3>
-                    {aiStats.recentErrors.map((err) => (
-                      <div className="settings-row" key={err.id}>
-                        <span>
-                          {err.mode} · {new Date(err.createdAt).toLocaleString()}
-                        </span>
-                        <span>{err.errorMessage}</span>
-                      </div>
-                    ))}
-                  </>
-                ) : null}
-              </div>
-            </div>
-          ))}
-
-        {section === 'prompts' && (
-          <div className="panel" style={{ padding: 16 }}>
-            <h3>Prompt versions</h3>
-            <p className="muted-note">
-              Active prompts are used by /api/ai/generate for their mode. Safety teams can tune each mode and activate a version.
-            </p>
-            <div className="form-stack">
-              <label>
-                <span>Mode</span>
-                <select aria-label="Mode" value={promptMode} onChange={(event) => setPromptMode(event.target.value as PromptVersion['mode'])}>
-                  <option value="NAVIGATION">Navigation</option>
-                  <option value="ENVIRONMENT">Environment</option>
-                  <option value="READING">Reading</option>
-                  <option value="ASSISTANT">Assistant</option>
-                </select>
-              </label>
-              <label>
-                <span>Prompt</span>
-                <textarea aria-label="Prompt" rows={5} value={promptText} onChange={(event) => setPromptText(event.target.value)} placeholder="Write the system prompt for this mode…" />
-              </label>
-              <button className="primary-btn" onClick={createPrompt}>
-                Create version
-              </button>
-            </div>
-            {prompts === null ? (
-              <p className="muted-note" role="status" aria-live="polite">Loading…</p>
-            ) : prompts.length === 0 ? (
-              <p className="muted-note" role="status" aria-live="polite">No prompt versions yet. Create one above.</p>
-            ) : (
-              <ul className="settings-list">
-                {prompts.map((p) => (
-                  <li key={p.id} className="settings-list-item">
-                    <div className="min-w-0">
-                      <p className="settings-list-title">
-                        {p.mode} v{p.version} {p.isActive ? <span className="pill pill-success">ACTIVE</span> : null}
-                      </p>
-                      <p className="settings-list-sub">{p.prompt.slice(0, 120)}{p.prompt.length > 120 ? '…' : ''}</p>
-                    </div>
-                    {!p.isActive && (
-                      <button className="ghost-btn" onClick={() => activatePrompt(p.id)}>
-                        Activate
-                      </button>
-                    )}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        )}
-      </section>
-    </div>
   );
 }
 

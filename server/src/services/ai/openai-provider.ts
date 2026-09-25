@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { safeFetch } from '../../lib/safe-url.js';
 import { buildPrompt } from './prompt-builder.js';
-import { AiProviderError, type AiProvider, type AiRequest, type AiResult } from './types.js';
+import { AiProviderError, type AiProvider, type AiRequest, type AiResult, type VisionMessage } from './types.js';
 
 /**
  * OpenAI-compatible chat-completions provider. Works with OpenAI itself and
@@ -170,6 +170,56 @@ export class OpenAiCompatibleProvider implements AiProvider {
       const text = payload.choices?.[0]?.message?.content;
       if (!text) throw new AiProviderError('AI provider returned an empty response', 'provider_error');
       return JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, '')) as Record<string, unknown>;
+    } catch (error) {
+      if (error instanceof AiProviderError) throw error;
+      if (timeoutController.signal.aborted) throw new AiProviderError('AI request timed out', 'timeout');
+      throw new AiProviderError(error instanceof Error ? error.message : 'AI request failed', 'provider_error');
+    } finally {
+      clearTimeout(timeout);
+      signal.removeEventListener('abort', onExternalAbort);
+    }
+  }
+
+  /** Vision completion with plain-text output (no JSON contract) for the OCR path. */
+  async completeVision(messages: VisionMessage[], image: { base64: string; mimeType: string }, signal: AbortSignal): Promise<string> {
+    const timeoutController = new AbortController();
+    const timeout = setTimeout(() => timeoutController.abort(), MODEL_TIMEOUT_MS);
+    const onExternalAbort = () => timeoutController.abort();
+    signal.addEventListener('abort', onExternalAbort);
+
+    try {
+      // The image rides on the last (user) turn as a data-URL part; no
+      // response_format here — the reply must be the extracted text itself,
+      // not JSON.
+      const chatMessages = messages.map((message) =>
+        message.role === 'system'
+          ? { role: 'system', content: message.text }
+          : {
+              role: 'user',
+              content: [
+                { type: 'text', text: message.text },
+                { type: 'image_url', image_url: { url: `data:${image.mimeType};base64,${image.base64}` } },
+              ],
+            },
+      );
+      const response = await safeFetch(`${this.baseUrl.replace(/\/+$/, '')}/chat/completions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.apiKey}` },
+        body: JSON.stringify({ model: this.model, messages: chatMessages, temperature: 0 }),
+        signal: timeoutController.signal,
+      });
+      if (!response.ok) {
+        throw new AiProviderError(
+          `AI provider error (status ${response.status})`,
+          response.status === 401 || response.status === 403 || response.status === 404 ? 'invalid_key' : 'provider_error',
+        );
+      }
+      const payload = (await response.json().catch(() => null)) as { choices?: Array<{ message?: { content?: string | null } }> } | null;
+      const text = payload?.choices?.[0]?.message?.content;
+      if (text == null) throw new AiProviderError('AI provider returned an empty response', 'provider_error');
+      // An empty string is a valid "no readable text" reply; routes/ocr.ts
+      // maps its [NO_TEXT_FOUND] marker (and stray whitespace) to "".
+      return text;
     } catch (error) {
       if (error instanceof AiProviderError) throw error;
       if (timeoutController.signal.aborted) throw new AiProviderError('AI request timed out', 'timeout');

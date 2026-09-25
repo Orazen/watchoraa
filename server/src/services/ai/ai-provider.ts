@@ -31,6 +31,11 @@ export class DemoProvider implements AiProvider {
   async completeJson(): Promise<Record<string, unknown>> {
     return { intent: 'unknown', parameters: {}, confidence: 0, requiresConfirmation: false };
   }
+
+  /** Never used: routes/ocr.ts answers 503 while the demo provider is resolved. */
+  async completeVision(): Promise<string> {
+    throw new AiProviderError('Demo provider cannot read text', 'unsupported');
+  }
 }
 
 /** The per-user configuration that selects and parameterizes a provider. */

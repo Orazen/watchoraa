@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { safeFetch } from '../../lib/safe-url.js';
 import { buildPrompt } from './prompt-builder.js';
-import { AiProviderError, type AiProvider, type AiRequest, type AiResult } from './types.js';
+import { AiProviderError, type AiProvider, type AiRequest, type AiResult, type VisionMessage } from './types.js';
 
 const modelResponseSchema = z.object({
   summary: z.string().min(1).max(600),
@@ -136,6 +136,53 @@ export class GeminiProvider implements AiProvider {
       const text = payload.candidates?.[0]?.content?.parts?.[0]?.text;
       if (!text) throw new AiProviderError('Gemini returned an empty response', 'provider_error');
       return JSON.parse(text.replace(/```json|```/g, '').trim()) as Record<string, unknown>;
+    } catch (error) {
+      if (error instanceof AiProviderError) throw error;
+      if (timeoutController.signal.aborted) throw new AiProviderError('Gemini request timed out', 'timeout');
+      throw new AiProviderError(error instanceof Error ? error.message : 'Gemini request failed', 'provider_error');
+    } finally {
+      clearTimeout(timeout);
+      signal.removeEventListener('abort', onExternalAbort);
+    }
+  }
+
+  /** Vision completion with plain-text output (no JSON contract) for the OCR path. */
+  async completeVision(messages: VisionMessage[], image: { base64: string; mimeType: string }, signal: AbortSignal): Promise<string> {
+    const timeoutController = new AbortController();
+    const timeout = setTimeout(() => timeoutController.abort(), GEMINI_TIMEOUT_MS);
+    const onExternalAbort = () => timeoutController.abort();
+    signal.addEventListener('abort', onExternalAbort);
+
+    try {
+      const systemParts = messages.filter((message) => message.role === 'system').map((message) => ({ text: message.text }));
+      const parts: Array<Record<string, unknown>> = [
+        ...messages.filter((message) => message.role === 'user').map((message) => ({ text: message.text })),
+        { inline_data: { mime_type: image.mimeType, data: image.base64 } },
+      ];
+      const response = await safeFetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts }],
+            // Plain-text output: no responseMimeType json — the reply must be
+            // the extracted text itself, not JSON.
+            ...(systemParts.length > 0 ? { systemInstruction: { parts: systemParts } } : {}),
+            generationConfig: { temperature: 0.1 },
+          }),
+          signal: timeoutController.signal,
+        },
+      );
+      if (!response.ok) {
+        throw new AiProviderError(`Gemini error (status ${response.status})`, response.status === 401 || response.status === 403 ? 'invalid_key' : 'provider_error');
+      }
+      const payload = (await response.json()) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> };
+      const text = payload.candidates?.[0]?.content?.parts?.map((part) => part.text ?? '').join('');
+      if (text == null) throw new AiProviderError('Gemini returned an empty response', 'provider_error');
+      // An empty string is a valid "no readable text" reply; routes/ocr.ts
+      // maps its [NO_TEXT_FOUND] marker (and stray whitespace) to "".
+      return text;
     } catch (error) {
       if (error instanceof AiProviderError) throw error;
       if (timeoutController.signal.aborted) throw new AiProviderError('Gemini request timed out', 'timeout');
