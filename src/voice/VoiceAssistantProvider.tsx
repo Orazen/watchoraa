@@ -14,7 +14,6 @@ import { CommandRouter, LOW_CONFIDENCE_MESSAGE } from './commandRouter';
 import { matchDeterministicCommand } from './deterministicCommands';
 import { matchFeelingPhrase } from './companion';
 import { EMERGENCY_PRIORITY_INTENTS } from './voiceTypes';
-import { ConfirmationManager } from './confirmationManager';
 import { DEFAULT_VOICE_SETTINGS, isHandsFree, HANDS_FREE_ONBOARDING, MIC_PERMISSION_REQUEST, MIC_UNAVAILABLE_MESSAGE, STT_UNAVAILABLE_MESSAGE, type VoiceIntent, type VoiceSettings } from './voiceTypes';
 import { api as apiClient } from '../api';
 import { loadVoiceSettings, saveVoiceSettings } from './voiceSettingsStorage';
@@ -46,7 +45,6 @@ export interface VoiceAssistantApi {
   speak: (text: string) => void;
   routeText: (text: string) => Promise<VoiceIntent>;
   handleTranscript: (text: string) => Promise<void>;
-  confirmation: ConfirmationManager;
   /** True when hands-free listening is active or paused (i.e. the mode is on). */
   handsFree: boolean;
   /** True when a wake phrase has been heard and a command is expected next. */
@@ -133,7 +131,6 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
 
   const recognitionRef = useRef<RecognitionLike | null>(null);
   const routerRef = useRef<CommandRouter | null>(null);
-  const confirmRef = useRef<ConfirmationManager | null>(null);
   const speakRef = useRef(speakProp);
   const onCommandRef = useRef(onCommand);
   const onBargeInRef = useRef(onBargeIn);
@@ -184,10 +181,7 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
   languageHintRef.current = settings.language;
 
   if (!routerRef.current) routerRef.current = new CommandRouter({ aiParser, offline: offline ?? false });
-  if (!confirmRef.current) confirmRef.current = new ConfirmationManager();
-
   const router = routerRef.current;
-  const confirmation = confirmRef.current;
   const supported = useMemo(() => typeof getRecognitionCtor() === 'function', []);
 
   const handsFree = isHandsFree(settings);
@@ -542,10 +536,6 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
       }
       const intent = await router.route(text);
       setLastIntent(intent);
-      if (confirmation.handleConfirmIntent(intent)) {
-        setState('idle');
-        return;
-      }
       if (intent.intent === 'unknown') {
         speakRef.current(LOW_CONFIDENCE_MESSAGE, 5);
         setState('idle');
@@ -586,7 +576,7 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
       onCommandRef.current(intent);
       setState('idle');
     },
-    [router, confirmation],
+    [router],
   );
 
   const stopRecognition = useCallback(() => {
@@ -930,13 +920,9 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
       setState('processing');
       const intent = await router.route(text);
       setLastIntent(intent);
-      if (confirmation.handleConfirmIntent(intent)) {
-        setState('idle');
-        return intent;
-      }
       return intent;
     },
-    [router, confirmation],
+    [router],
   );
 
   const handleTranscript = useCallback(
@@ -989,7 +975,6 @@ export function VoiceAssistantProvider({ children, onCommand, speak: speakProp, 
     speak: (text: string) => speakRef.current(text, 5),
     routeText,
     handleTranscript,
-    confirmation,
     handsFree,
     wakeArmed,
   };

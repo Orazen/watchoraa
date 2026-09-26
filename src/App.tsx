@@ -23,6 +23,7 @@ import { useDepthSafety, depthAlertSpeech, type DepthAlert } from './useDepthSaf
 import { getCurrentPosition, describePlaceAsSpoken, distanceMeters, type Coordinates } from './geo';
 import { recognizeText, OCR_FALLBACK_CONFIDENCE_THRESHOLD } from './ocr';
 import { SpeechPriorityManager, type SpeechPriority } from './speechPriority';
+import { handleTablistKeys } from './tablistKeyboard';
 import { LiveAnnouncer, useLiveAnnouncer } from './accessibility/LiveAnnouncer';
 import { PermissionOnboarding, type OnboardingResult } from './permissions/PermissionOnboarding';
 import { PermissionCenter } from './permissions/PermissionCenter';
@@ -2117,7 +2118,11 @@ function MainApp({
               tablist is named so it is announced as "Dashboard sections, tab
               list" rather than an anonymous tab list. */}
           <nav className="sidebar-nav" aria-label="Dashboard sections">
-            <div role="tablist" aria-label="Dashboard sections">
+            <div
+              role="tablist"
+              aria-label="Dashboard sections"
+              onKeyDown={(e) => handleTablistKeys(e, (i) => setActiveTab(visibleTabs[i].key))}
+            >
               {visibleTabs.map((tab) => (
                 <button
                   key={tab.key}
@@ -2125,6 +2130,7 @@ function MainApp({
                   id={`tab-${tab.key}`}
                   aria-controls={`panel-${tab.key}`}
                   aria-selected={activeTab === tab.key}
+                  tabIndex={activeTab === tab.key ? 0 : -1}
                   className={`nav-item ${activeTab === tab.key ? 'active' : ''}`}
                   onClick={() => setActiveTab(tab.key)}
                 >
@@ -2357,7 +2363,12 @@ function MainApp({
           aria-label="Mobile navigation"
           aria-hidden={!compactNav || undefined}
         >
-          <div role="tablist" className="bottom-nav-tablist" aria-label="Dashboard sections">
+          <div
+            role="tablist"
+            className="bottom-nav-tablist"
+            aria-label="Dashboard sections"
+            onKeyDown={(e) => handleTablistKeys(e, (i) => setActiveTab(visibleTabs[i].key))}
+          >
             {visibleTabs.map((tab) => (
               <button
                 key={tab.key}
@@ -2365,6 +2376,7 @@ function MainApp({
                 id={`tab-mobile-${tab.key}`}
                 aria-controls={`panel-${tab.key}`}
                 aria-selected={activeTab === tab.key}
+                tabIndex={activeTab === tab.key ? 0 : -1}
                 className={`bottom-nav-item ${activeTab === tab.key ? 'active' : ''}`}
                 onClick={() => setActiveTab(tab.key)}
               >

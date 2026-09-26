@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react';
 import { BrainCircuit, Megaphone, ScrollText, Siren, UsersRound } from 'lucide-react';
+import { handleTablistKeys } from '../tablistKeyboard';
+
+const ADMIN_SECTIONS = ['users', 'incidents', 'sos', 'ai', 'prompts', 'audit'] as const;
+type AdminSection = (typeof ADMIN_SECTIONS)[number];
 import {
   api,
   ApiError,
@@ -79,7 +83,7 @@ export function AdminTab({ announce }: { announce: (message: string, tone?: Tone
   const [auditLogs, setAuditLogs] = useState<AuditLogRow[] | null>(null);
   const [promptMode, setPromptMode] = useState<PromptVersion['mode']>('NAVIGATION');
   const [promptText, setPromptText] = useState('');
-  const [section, setSection] = useState<'users' | 'incidents' | 'sos' | 'ai' | 'prompts' | 'audit'>('users');
+  const [section, setSection] = useState<AdminSection>('users');
 
   useEffect(() => {
     api
@@ -189,14 +193,20 @@ export function AdminTab({ announce }: { announce: (message: string, tone?: Tone
             and aria-controls, each panel has role="tabpanel", the matching id,
             and aria-labelledby back to its tab. Without it the tablist announced
             as an anonymous list of tabs with no relationship to the content. */}
-        <div className="flex flex-wrap gap-2" role="tablist" aria-label="Admin sections">
-          {(['users', 'incidents', 'sos', 'ai', 'prompts', 'audit'] as const).map((key) => (
+        <div
+          className="flex flex-wrap gap-2"
+          role="tablist"
+          aria-label="Admin sections"
+          onKeyDown={(e) => handleTablistKeys(e, (i) => setSection(ADMIN_SECTIONS[i]))}
+        >
+          {ADMIN_SECTIONS.map((key) => (
             <Button
               key={key}
               role="tab"
               id={`tab-admin-${key}`}
               aria-controls={`panel-admin-${key}`}
               aria-selected={section === key}
+              tabIndex={section === key ? 0 : -1}
               variant={section === key ? 'secondary' : 'ghost'}
               onClick={() => setSection(key)}
             >

@@ -4,7 +4,6 @@
 import { describe, expect, it } from 'vitest';
 import { matchDeterministicCommand } from '../deterministicCommands';
 import { CommandRouter } from '../commandRouter';
-import { ConfirmationManager } from '../confirmationManager';
 
 describe('deterministic emergency commands', () => {
   it('matches emergency phrases', () => {
@@ -75,20 +74,6 @@ describe('deterministic assist/settings commands', () => {
 
   it('returns null for unknown', () => {
     expect(matchDeterministicCommand('the sky is blue today')).toBeNull();
-  });
-});
-
-describe('confirmation manager', () => {
-  it('routes confirm/cancel to the active request only', () => {
-    const cm = new ConfirmationManager();
-    let confirmed = 0;
-    let cancelled = 0;
-    expect(cm.request('emergency', 'Confirm?', () => confirmed++, () => cancelled++)).toBe(true);
-    expect(cm.request('emergency', 'second', () => {})).toBe(false); // one at a time
-    cm.handleConfirmIntent({ intent: 'confirm', parameters: {}, confidence: 1, requiresConfirmation: false, deterministic: true });
-    expect(confirmed).toBe(1);
-    cm.handleConfirmIntent({ intent: 'cancel', parameters: {}, confidence: 1, requiresConfirmation: false, deterministic: true });
-    expect(cancelled).toBe(0); // already consumed
   });
 });
 

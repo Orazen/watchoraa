@@ -1,7 +1,13 @@
 import { useState } from 'react';
 import { MapPin, MapPinCheck, MapPinPlus, Trash2 } from 'lucide-react';
 import { api, ApiError, type SavedPlace } from '../api';
-import { getCurrentPosition, describeRelativePosition, type Coordinates } from '../geo';
+import {
+  describePlaceAsSpoken,
+  distanceMeters,
+  getCurrentPosition,
+  describeRelativePosition,
+  type Coordinates,
+} from '../geo';
 import type { SpeechPriority } from '../speechPriority';
 import type { Tone } from './shared';
 import {
@@ -93,6 +99,25 @@ export function PlacesTab({
     }
   }
 
+  /**
+   * The relative-distance badges on the place cards are visual text; a blind
+   * user never reads them, so after a location fix the nearest saved place is
+   * spoken by name, distance, and clock direction ("Home, 340 m away, at
+   * about 9 o'clock."). That summary is the entire point of the "Use my
+   * location" button on this screen.
+   */
+  function nearestSpokenPlace(from: Coordinates): string | null {
+    if (!places?.length) return null;
+    let best: { name: string; to: Coordinates; meters: number } | null = null;
+    for (const place of places) {
+      if (place.latitude == null || place.longitude == null) continue;
+      const to = { latitude: place.latitude, longitude: place.longitude };
+      const meters = distanceMeters(from, to);
+      if (!best || meters < best.meters) best = { name: place.label, to, meters };
+    }
+    return best ? describePlaceAsSpoken(from, best.to, best.name) : null;
+  }
+
   async function locateMe() {
     setLocating(true);
     try {
@@ -100,6 +125,8 @@ export function PlacesTab({
       setCurrentPosition(coords);
       speak?.('Location updated.', 5, 'place-locate-me');
       announce('Location updated. Distances below are relative to where you are now.', 'online');
+      const nearest = nearestSpokenPlace(coords);
+      if (nearest) speak?.(nearest, 4, 'places-nearest');
     } catch (error) {
       announce(error instanceof Error ? error.message : 'Could not get your location.', 'error');
       speak?.('Could not get your location.', 5, 'locate-me-failed');
