@@ -377,7 +377,10 @@ export function VoiceFirstDashboard({
           two ways in, so they sit together and ahead of every action. */}
       <section aria-label="Give Watchora a command" className="mt-8">
         <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">Command</p>
-        <div className="mt-3 flex justify-center">
+        {/* pb-9 reserves the strip the orb's absolutely-positioned state label
+            needs (it sits 1.7rem below the orb) so the label never collides
+            with the command bar below it. */}
+        <div className="mt-3 flex justify-center pb-9">
           {voiceState !== undefined && onOrbToggle ? (
             <WatchoraOrb
               state={orbStateFor(voiceState, hazardActive)}
@@ -388,7 +391,7 @@ export function VoiceFirstDashboard({
             <VoiceControlButton />
           )}
         </div>
-        <div className="mt-4">
+        <div>
           <TypeToJarvis autoFocus={voiceState !== undefined && (voiceState === 'unsupported' || voiceState === 'permission-needed')} />
         </div>
       </section>
