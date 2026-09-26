@@ -319,7 +319,7 @@ export function VoiceFirstDashboard({
   return (
     <div className="mx-auto w-full max-w-3xl px-4 pb-10 pt-2">
       <header>
-        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">Command centre</p>
+        <p className="text-sm font-semibold uppercase tracking-[0.22em] text-muted-foreground">Command centre</p>
       </header>
 
       {/* DESIGN.md section 4: Home is three bands in priority order — Status,
@@ -376,7 +376,7 @@ export function VoiceFirstDashboard({
       {/* Band 2 — Command: the orb and the type-to-Jarvis bar. These are the
           two ways in, so they sit together and ahead of every action. */}
       <section aria-label="Give Watchora a command" className="mt-8">
-        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">Command</p>
+        <p className="text-sm font-semibold uppercase tracking-[0.22em] text-muted-foreground">Command</p>
         {/* pb-9 reserves the strip the orb's absolutely-positioned state label
             needs (it sits 1.7rem below the orb) so the label never collides
             with the command bar below it. */}
@@ -411,7 +411,7 @@ export function VoiceFirstDashboard({
           duplicating navigation that already exists, and it put them between
           the command bar and the real actions. Nothing became unreachable. */}
       <section aria-label="Primary actions" className="mt-8">
-        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">Do</p>
+        <p className="text-sm font-semibold uppercase tracking-[0.22em] text-muted-foreground">Do</p>
         <div className="mt-3 grid gap-4 sm:grid-cols-2">
           <DashboardActionCard
             icon={MapPin}

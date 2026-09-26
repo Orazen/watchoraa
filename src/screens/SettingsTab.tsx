@@ -363,7 +363,7 @@ export function SettingsTab({
                 >
                   <div className="min-w-0">
                     <p className="truncate text-sm font-semibold text-foreground">{entry.source}</p>
-                    <p className="text-xs text-muted-foreground">{new Date(entry.createdAt).toLocaleString()}</p>
+                    <p className="text-sm text-muted-foreground">{new Date(entry.createdAt).toLocaleString()}</p>
                   </div>
                   <Button variant="outline" size="md" onClick={() => onDeleteReading(entry.id)} aria-label="Delete reading entry">
                     Delete

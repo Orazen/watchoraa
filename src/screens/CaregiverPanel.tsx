@@ -22,7 +22,7 @@ import type { Tone } from './shared';
 function PanelHeading({ kicker, icon, title }: { kicker: string; icon: React.ReactNode; title: string }) {
   return (
     <div className="mb-3">
-      <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">{kicker}</p>
+      <p className="text-sm font-semibold uppercase tracking-widest text-muted-foreground">{kicker}</p>
       <h2 className="mt-1 flex items-center gap-2.5 font-display text-xl font-semibold tracking-tight text-foreground">
         {icon}
         {title}

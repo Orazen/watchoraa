@@ -184,7 +184,7 @@ export function SafeJourneyTab({
             <CardHeader className="gap-2 p-6 pb-4">
               <div className="flex items-center gap-2.5">
                 <Navigation aria-hidden="true" className="h-5 w-5 text-primary" />
-                <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">safe journey</p>
+                <p className="text-sm font-bold uppercase tracking-[0.14em] text-primary">safe journey</p>
               </div>
               <h2 className="font-display text-2xl font-semibold tracking-tight">Journey in progress</h2>
             </CardHeader>
@@ -245,7 +245,7 @@ export function SafeJourneyTab({
                 </Button>
               </div>
 
-              <p className="text-xs leading-relaxed text-muted-foreground">
+              <p className="text-sm leading-relaxed text-muted-foreground">
                 {journey.shareLive ? 'Live location sharing is on for your trusted contact.' : 'Live location sharing is off.'} · Check-in every {journey.checkInIntervalMinutes} min
               </p>
             </CardContent>
@@ -257,7 +257,7 @@ export function SafeJourneyTab({
             <CardHeader className="gap-2 p-6 pb-4">
               <div className="flex items-center gap-2.5">
                 <ShieldCheck aria-hidden="true" className="h-5 w-5 text-primary" />
-                <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">safe journey</p>
+                <p className="text-sm font-bold uppercase tracking-[0.14em] text-primary">safe journey</p>
               </div>
               <h2 className="font-display text-2xl font-semibold tracking-tight">Start a safe journey</h2>
               <CardDescription>Tell Watchora where you are going and how often to check in.</CardDescription>
@@ -335,7 +335,7 @@ export function SafeJourneyTab({
                 )}
               </Button>
 
-              <p className="text-xs leading-relaxed text-muted-foreground">
+              <p className="text-sm leading-relaxed text-muted-foreground">
                 Watchora will ask you if you deviate from your route or miss your arrival, and alert your trusted contact if you do not respond.
               </p>
             </CardContent>

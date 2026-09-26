@@ -148,7 +148,7 @@ export function PlacesTab({
                         </Badge>
                       ) : null}
                       {!hasCoords ? (
-                        <p className="mt-1 text-xs text-muted-foreground/80">No location saved for this place.</p>
+                        <p className="mt-1 text-sm text-muted-foreground">No location saved for this place.</p>
                       ) : null}
                     </div>
                     <Button

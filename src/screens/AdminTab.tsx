@@ -29,7 +29,7 @@ import type { Tone } from './shared';
 function StatCard({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <Card className="p-3.5">
-      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
+      <p className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">{label}</p>
       <p className="mt-1 font-display text-3xl font-semibold leading-none tabular-nums text-foreground">{value}</p>
     </Card>
   );
@@ -168,7 +168,7 @@ export function AdminTab({ announce }: { announce: (message: string, tone?: Tone
     <div className="mx-auto w-full max-w-3xl">
       <section className="mt-6">
         <div className="mb-4">
-          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Moderation</p>
+          <p className="text-sm font-semibold uppercase tracking-widest text-muted-foreground">Moderation</p>
           <h2 className="mt-1 font-display text-2xl font-semibold tracking-tight text-foreground">Admin</h2>
         </div>
         <div className="flex flex-wrap gap-2" role="tablist" aria-label="Admin sections">
@@ -372,7 +372,7 @@ export function AdminTab({ announce }: { announce: (message: string, tone?: Tone
                             key={err.id}
                             className="flex flex-col gap-1 py-2.5 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
                           >
-                            <span className="font-mono text-xs text-muted-foreground">
+                            <span className="font-mono text-sm text-muted-foreground">
                               {err.mode} · {new Date(err.createdAt).toLocaleString()}
                             </span>
                             <span className="min-w-0 text-sm text-destructive">{err.errorMessage}</span>
@@ -492,7 +492,7 @@ export function AdminTab({ announce }: { announce: (message: string, tone?: Tone
                           {row.actor ? ` · ${row.actor.email}` : ''}
                         </span>
                       </div>
-                      <span className="font-mono text-xs text-muted-foreground">{new Date(row.createdAt).toLocaleString()}</span>
+                      <span className="font-mono text-sm text-muted-foreground">{new Date(row.createdAt).toLocaleString()}</span>
                     </li>
                   ))}
                 </ul>

@@ -99,7 +99,7 @@ export function Onboarding({
       <Card className="w-full max-w-xl">
         <CardHeader className="gap-2 p-6 pb-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">{step.eyebrow}</p>
+            <p className="text-sm font-bold uppercase tracking-[0.14em] text-primary">{step.eyebrow}</p>
             <Badge tone="outline">
               Step {stepIndex + 1} of {STEPS.length}
             </Badge>

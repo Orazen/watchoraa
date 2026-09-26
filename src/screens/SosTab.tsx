@@ -336,7 +336,7 @@ export function SosTab({
             <Siren aria-hidden="true" className="h-11 w-11" />
             {sending ? 'Sending…' : 'Send SOS'}
           </Button>
-          <p className="text-center text-xs leading-relaxed text-muted-foreground">
+          <p className="text-center text-sm leading-relaxed text-muted-foreground">
             Your trusted contacts are alerted and your live location is shared. You always get five seconds to cancel.
           </p>
         </CardContent>
@@ -469,7 +469,7 @@ export function SosTab({
                   {manageOnAdd ? 'On' : 'Off'}
                 </Button>
               </div>
-              <p className="text-xs leading-relaxed text-muted-foreground">
+              <p className="text-sm leading-relaxed text-muted-foreground">
                 Remote care: once this contact signs up with the same email, they can adjust your speech, display, and
                 connectivity settings from their own Watchora account — nothing else. Your AI key is never visible to
                 them, every change is logged, and you can turn this off at any time.

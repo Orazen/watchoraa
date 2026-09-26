@@ -105,7 +105,7 @@ export function AuthScreen({
       <Card className="w-full max-w-md">
         <CardHeader className="flex-row items-start justify-between gap-4 p-6 pb-4">
           <div className="flex flex-col gap-1.5">
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-primary">watchora</p>
+            <p className="text-sm font-bold uppercase tracking-[0.14em] text-primary">watchora</p>
             <h2 id="auth-title" className="font-display text-2xl font-semibold leading-tight tracking-tight text-foreground">
               {mode === 'signup' ? 'Create your account' : 'Sign in'}
             </h2>
