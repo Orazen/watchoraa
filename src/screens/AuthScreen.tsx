@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, KeyRound, LogIn, Mail, UserPlus, X } from 'lucide-react';
 import { api, ApiError, setSession, type PublicUser } from '../api';
 import { useFocusTrap } from '../accessibility/FocusManager';
@@ -28,6 +28,22 @@ export function AuthScreen({
   const [resetToken, setResetToken] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // WCAG 2.1.2 "No Keyboard Trap": a dialog the user cannot leave by keyboard
+  // is a hard dead end for the voice-first (screen reader) user. Escape closes
+  // the dialog, but only when a close affordance actually exists — a forced
+  // sign-in has nothing to close back to.
+  useEffect(() => {
+    if (!onClose) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
 
   async function submit() {
     setError('');
@@ -100,6 +116,7 @@ export function AuthScreen({
       role="dialog"
       aria-modal="true"
       aria-labelledby="auth-title"
+      tabIndex={-1}
       className="fixed inset-0 z-[60] grid place-items-center overflow-y-auto bg-black/60 p-4 backdrop-blur-sm"
     >
       <Card className="w-full max-w-md">

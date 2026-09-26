@@ -29,6 +29,13 @@ function SettingsRow({ label, children }: { label: string; children: React.React
   );
 }
 
+/* Every card below is a top-level band of the Settings screen and sits directly
+ * under the shell's single <h1>, so all of them render their CardTitle as <h2>.
+ * With the CardTitle default (<h3>) the whole screen outline was h1 → h3 and a
+ * VoiceOver rotor / TalkBack "navigate by heading" user never met level 2.
+ * Sub-sections inside a card (e.g. "Hazard alerts") stay one level deeper, at
+ * <h3>. */
+
 export function SettingsTab({
   user,
   language,
@@ -90,7 +97,7 @@ export function SettingsTab({
     <div className="mx-auto flex w-full max-w-2xl flex-col">
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2.5">
+          <CardTitle as="h2" className="flex items-center gap-2.5">
             <UserRound aria-hidden="true" className="size-5 shrink-0 text-primary" />
             Profile
           </CardTitle>
@@ -104,7 +111,7 @@ export function SettingsTab({
 
       <Card className="mt-6">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2.5">
+          <CardTitle as="h2" className="flex items-center gap-2.5">
             <AudioLines aria-hidden="true" className="size-5 shrink-0 text-primary" />
             Voice &amp; audio
           </CardTitle>
@@ -166,7 +173,7 @@ export function SettingsTab({
 
       <Card className="mt-6">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2.5">
+          <CardTitle as="h2" className="flex items-center gap-2.5">
             <MessageSquareText aria-hidden="true" className="size-5 shrink-0 text-primary" />
             Verbosity &amp; instructions
           </CardTitle>
@@ -252,7 +259,7 @@ export function SettingsTab({
 
       <Card className="mt-6">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2.5">
+          <CardTitle as="h2" className="flex items-center gap-2.5">
             <SlidersHorizontal aria-hidden="true" className="size-5 shrink-0 text-primary" />
             Display &amp; haptics
           </CardTitle>
@@ -264,7 +271,9 @@ export function SettingsTab({
             </Button>
           </SettingsRow>
           <div className="flex flex-col gap-4 border-t-2 border-foreground/10 pt-4">
-            <h4 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Hazard alerts</h4>
+            {/* Sub-section of the "Display & haptics" card: one level deeper
+                than the card's <h2>. It was an <h4>, which skipped level 3. */}
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Hazard alerts</h3>
             <p className="text-sm text-muted-foreground">
               Controls for the local, camera-based hazard layer (Assist tab). Follows a fail-silent design: when
               detection confidence is low, nothing fires rather than guessing — see the audit notes in
@@ -311,19 +320,26 @@ export function SettingsTab({
 
       <Card className="mt-6">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2.5">
+          {/* AiProviderSection (src/AiProviderSettings.tsx) renders its own
+              <h3>AI provider</h3> immediately inside the card body, so the two
+              titles were both level 3 and a rotor user heard "AI provider,
+              heading level 3" twice in a row. That file is owned elsewhere, so
+              this card keeps the real, correctly-leveled <h2> section heading
+              and the inner duplicate is suppressed by the scoped
+              `.ai-provider-host` rule in styles.css. */}
+          <CardTitle as="h2" className="flex items-center gap-2.5">
             <BrainCircuit aria-hidden="true" className="size-5 shrink-0 text-primary" />
             AI provider
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="ai-provider-host">
           <AiProviderSection announce={announce} speak={(text) => speak(text)} />
         </CardContent>
       </Card>
 
       <Card className="mt-6">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2.5">
+          <CardTitle as="h2" className="flex items-center gap-2.5">
             <LogOut aria-hidden="true" className="size-5 shrink-0 text-primary" />
             Account
           </CardTitle>
@@ -342,7 +358,7 @@ export function SettingsTab({
 
       <Card className="mt-6">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2.5">
+          <CardTitle as="h2" className="flex items-center gap-2.5">
             <History aria-hidden="true" className="size-5 shrink-0 text-primary" />
             Reading history
           </CardTitle>

@@ -1368,6 +1368,117 @@ select {
   width: 100%;
 }
 
+/* Range inputs are deliberately excluded from the shared control chrome above
+ * (a native track cannot take the same padding/border treatment), but they
+ * were left with no replacement at all — so they rendered at the UA default of
+ * roughly 16-20px tall and missed the 24x24 minimum in WCAG 2.2 SC 2.5.8 Target
+ * Size (Minimum), while every other control in the app is >= 44px. That
+ * matters out of proportion here: the text-scale slider is itself a low-vision
+ * accommodation, so the user who needs bigger text has to hit a sub-24px drag
+ * target to get it. The box below is a 44px interactive area with a 28px thumb.
+ * All colour comes from the theme tokens, so light and dark both stay audited:
+ * the track is --panel-border (3.88:1 light / 4.31:1 dark against the panel),
+ * the thumb is --w-primary (ink on cream / cream on ink). */
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 44px;
+  margin: 0;
+  background: transparent;
+  accent-color: var(--w-primary-strong);
+  cursor: pointer;
+}
+
+input[type='range']::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 8px;
+  border: 2px solid var(--panel-border-strong);
+  border-radius: 999px;
+  background: var(--panel-border);
+}
+
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 28px;
+  height: 28px;
+  /* Track outer height is 8 + 2x2 border = 12, so its centre is 6px down;
+     the thumb's half-height is 14. -12 puts the two centres together. */
+  margin-top: -12px;
+  border: 2px solid var(--panel-border-strong);
+  border-radius: 999px;
+  background: var(--w-primary);
+}
+
+input[type='range']::-moz-range-track {
+  width: 100%;
+  height: 8px;
+  border: 2px solid var(--panel-border-strong);
+  border-radius: 999px;
+  background: var(--panel-border);
+}
+
+input[type='range']::-moz-range-thumb {
+  box-sizing: border-box;
+  width: 28px;
+  height: 28px;
+  border: 2px solid var(--panel-border-strong);
+  border-radius: 999px;
+  background: var(--w-primary);
+}
+
+/* Firefox draws its own dotted ring on the thumb; the app's ring is the 3px
+ * --focus-ring around the whole 44px control (input:focus-visible, above), so
+ * suppress the duplicate rather than stacking two indicators. */
+input[type='range']::-moz-focus-outer {
+  border: 0;
+}
+
+/* Focus and drag state. The existing `input:focus-visible` rule already rings
+ * the whole control; these rules additionally recolour the track and thumb so
+ * the slider itself visibly changes, using the theme's own active-surface pair
+ * (13.15:1 light / 10.77:1 dark) rather than any hard-coded colour. */
+input[type='range']:focus-visible::-webkit-slider-thumb,
+input[type='range']:active::-webkit-slider-thumb {
+  background: var(--w-active-fg);
+}
+input[type='range']:focus-visible::-webkit-slider-runnable-track,
+input[type='range']:active::-webkit-slider-runnable-track {
+  background: var(--w-active-bg);
+}
+input[type='range']:focus-visible::-moz-range-thumb,
+input[type='range']:active::-moz-range-thumb {
+  background: var(--w-active-fg);
+}
+input[type='range']:focus-visible::-moz-range-track,
+input[type='range']:active::-moz-range-track {
+  background: var(--w-active-bg);
+}
+
+/* In forced-colours (Windows High Contrast) the appearance reset above would
+ * leave the track and thumb invisible, so hand rendering back to the OS. */
+@media (forced-colors: active) {
+  input[type='range'] {
+    -webkit-appearance: auto;
+    appearance: auto;
+    height: 44px;
+  }
+}
+
+/* Settings > AI provider. AiProviderSettings (src/AiProviderSettings.tsx)
+ * renders its own <h3>AI provider</h3> inside the card body, directly under the
+ * card's own "AI provider" title — a rotor user heard "AI provider, heading
+ * level 3" twice in a row. That file is owned elsewhere, so the scoped
+ * .ai-provider-host wrapper on the card body drops the duplicate from the
+ * accessibility tree (and the page) while the card title stays the single,
+ * correctly-leveled <h2>. Scoped to the host so the shared .settings-section
+ * is untouched everywhere else. */
+.ai-provider-host .settings-section > h3 {
+  display: none;
+}
+
 .analysis-mode-row {
   display: flex;
   flex-wrap: wrap;
@@ -1497,6 +1608,22 @@ select {
   top: 16px;
 }
 
+/* Landing-page skip-link target. The skip link calls .focus() on this section,
+ * so focus genuinely lands here — but the section used to carry the Tailwind
+ * `focus:outline-none` utility, and nothing in this file restored a ring, so
+ * the keyboard/screen-reader user was moved with nothing to see. A skip link
+ * that gives no focus feedback is worse than no skip link (SC 2.4.7). The ring
+ * reuses the app's own --focus-ring token (3px, theme-aware) with the same
+ * 2px offset used everywhere else. It is drawn OUTSIDE the section on purpose:
+ * the section is filled with --foreground, so an inside ring would be ink on
+ * ink, while the page behind it is --background and --focus-ring clears 3:1
+ * against both themes there. */
+#wispr-features:focus,
+#wispr-features:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+
 /* Reveal-on-scroll (Framer-style) */
 .wispr-reveal {
   opacity: 0;
@@ -1507,6 +1634,16 @@ select {
 .wispr-reveal.active {
   opacity: 1;
   transform: translateY(0);
+}
+
+/* A focusable descendant of a not-yet-revealed block is focused at zero
+ * opacity — neither the control nor its focus ring is perceivable, so the
+ * keyboard user has landed somewhere invisible (SC 2.4.7 Focus Visible). The
+ * IntersectionObserver may never fire for a block the user never scrolls to, or
+ * may be slow on a low-powered phone, so the reveal yields to focus. */
+.wispr-reveal:focus-within {
+  opacity: 1;
+  transform: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -2671,4 +2808,29 @@ select {
      width:100% button rule is in effect */
   width: auto;
   flex: 0 0 auto;
+}
+
+/* Cold-start screen shown while the session check runs. Previously the app
+   rendered nothing at all here, so a screen-reader user launching the PWA met
+   a document with no landmarks, no heading and no text, and could not tell
+   "still starting" from "failed to launch" from "signed out". */
+.app-loading {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+  text-align: center;
+  background: var(--background);
+  color: var(--text);
+}
+.app-loading h1 {
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: 600;
+}
+.app-loading p {
+  font-size: 16px;
 }

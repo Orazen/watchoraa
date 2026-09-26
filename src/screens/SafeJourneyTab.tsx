@@ -147,31 +147,55 @@ export function SafeJourneyTab({
     locRef.current = { watchId, timer };
   }
 
+  // These three are the app's primary safety workflow and every one of them is
+  // reachable by tapping a single button. They were written as bare `await`s
+  // with no try/catch, so a rejected request escaped the handler: no speech, no
+  // announcement, no error state. For a blind user the button is the entire
+  // feedback channel, so "I'm lost" on a dead network produced absolute silence
+  // — the user never learns help was not requested, and "end" failing left the
+  // journey still monitoring and still able to escalate while the user believed
+  // they were clear.
   async function checkIn() {
     if (!journey) return;
-    await api.journeyCheckIn(journey.id);
-    announce('Checked in. I will keep monitoring.', 'online');
-    speak('Checked in. I will keep monitoring.');
+    try {
+      await api.journeyCheckIn(journey.id);
+      announce('Checked in. I will keep monitoring.', 'online');
+      speak('Checked in. I will keep monitoring.', 5, 'journey-checkin');
+    } catch {
+      announce('Could not check in.', 'error');
+      speak('I could not check you in. Please try again.', 2, 'journey-checkin-fail');
+    }
     loadActive();
   }
 
   async function lost() {
     if (!journey) return;
-    await api.journeyLost(journey.id);
-    announce('Help requested. Your trusted contact has been notified.', 'error');
-    speak('Help requested. Your trusted contact has been notified.');
+    try {
+      await api.journeyLost(journey.id);
+      announce('Help requested. Your trusted contact has been notified.', 'error');
+      speak('Help requested. Your trusted contact has been notified.', 2, 'journey-lost');
+    } catch {
+      announce('Could not request help.', 'error');
+      speak('I could not request help. Say emergency if you need help now.', 2, 'journey-lost-fail');
+    }
   }
 
   async function end() {
     if (!journey) return;
-    await api.endJourney(journey.id);
+    try {
+      await api.endJourney(journey.id);
+    } catch {
+      announce('Could not end the journey.', 'error');
+      speak('I could not end the journey. It is still active. Please try again.', 2, 'journey-end-fail');
+      return;
+    }
     if (locRef.current) {
       navigator.geolocation.clearWatch(locRef.current.watchId);
       if (locRef.current.timer) clearInterval(locRef.current.timer);
       locRef.current = null;
     }
     announce('Journey ended. You are safe.', 'online');
-    speak('Journey ended. You are safe.');
+    speak('Journey ended. You are safe.', 5, 'journey-end');
     setLivePos(null);
     setJourney(null);
   }

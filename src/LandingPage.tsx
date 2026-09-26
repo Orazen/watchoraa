@@ -257,8 +257,13 @@ export function LandingPage({ onSignIn, onSignUp }: LandingProps) {
       </header>
 
       {/* ── Ink chamber: features ───────────────────────────── */}
+      {/* The landing skip link calls .focus() on this section. It must NOT
+          carry focus:outline-none — that moved focus here and then showed the
+          keyboard/screen-reader user nothing at all, defeating the whole point
+          of a skip link (SC 2.4.7 Focus Visible). styles.css gives
+          #wispr-features a visible, theme-aware :focus ring. */}
       <section
-        className="bg-[radial-gradient(50%_40%_at_50%_0%,color-mix(in_srgb,var(--secondary)_12%,transparent),transparent)] bg-foreground text-background focus:outline-none"
+        className="bg-[radial-gradient(50%_40%_at_50%_0%,color-mix(in_srgb,var(--secondary)_12%,transparent),transparent)] bg-foreground text-background"
         id="wispr-features"
         tabIndex={-1}
       >

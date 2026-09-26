@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, Info, Minus, Plus, Vibrate, Volume2 } from 'lucide-react';
 import { Badge, Button, Card, CardContent, CardFooter, CardHeader } from './components/ui';
+import { useFocusTrap } from './accessibility/FocusManager';
 
 // First-run onboarding for Watchora (roadmap Phase 1: "Add permission education
 // for camera, microphone, and location" + "Accessibility-first onboarding").
@@ -69,6 +70,12 @@ export function Onboarding({
   const step = STEPS[stepIndex];
   const spokenRef = useRef<number>(-1);
 
+  // This is an aria-modal dialog that was previously neither focus-trapped nor
+  // focused on open, so a screen-reader user stayed on the page behind it
+  // (which the modal semantics hide) and Tab escaped into the obscured app.
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  useFocusTrap(dialogRef, true);
+
   // Speak each step as it appears (voice-first onboarding).
   useEffect(() => {
     if (spokenRef.current === stepIndex) return;
@@ -89,11 +96,30 @@ export function Onboarding({
     if (stepIndex > 0) setStepIndex((i) => i - 1);
   }
 
+  // Escape mirrors the Back button that is actually on screen (it is only
+  // rendered for stepIndex > 0), so the keyboard path matches what a sighted
+  // user can see. There is no skip/abandon affordance on the first step, so
+  // Escape is a no-op there rather than silently dropping the user into an
+  // unconfigured app.
+  useEffect(() => {
+    if (stepIndex === 0) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setStepIndex((i) => (i > 0 ? i - 1 : i));
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [stepIndex]);
+
   return (
     <div
+      ref={dialogRef}
       role="dialog"
       aria-modal="true"
       aria-labelledby="onboarding-title"
+      tabIndex={-1}
       className="fixed inset-0 z-[60] grid place-items-center overflow-y-auto bg-black/60 p-4 backdrop-blur-sm"
     >
       <Card className="w-full max-w-xl">

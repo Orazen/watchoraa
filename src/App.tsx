@@ -209,7 +209,19 @@ function App() {
     setCurrentUser(null);
   }
 
-  if (!authChecked) return null;
+  // Cold start. This used to `return null`, which left the document with no
+  // <main>, no landmark, no heading and no text while the session check ran.
+  // A screen-reader user launching the installed PWA got a silent, structureless
+  // page and had no way to tell "still starting" from "failed to launch" from
+  // "signed out". A live region plus a real heading gives the wait an identity.
+  if (!authChecked) {
+    return (
+      <div className="app-loading" role="status" aria-live="polite">
+        <h1>Watchora</h1>
+        <p>Starting up. Checking your session.</p>
+      </div>
+    );
+  }
 
   if (!currentUser) {
     // Logged-out front door: the landing page IS the index route. The existing
@@ -355,7 +367,7 @@ function MainApp({
   // Priority-aware speech: danger/emergency interrupts anything lower.
   // voice/voiceRate live in refs so the once-created manager never speaks with
   // stale settings — settings changes must apply to the very next utterance.
-  function speakWithPriority(text: string, priority: SpeechPriority = 5, dedupeKey?: string, rateOverride?: number) {
+  function speakWithPriority(text: string, priority: SpeechPriority = 5, dedupeKey?: string, rateOverride?: number, cooldownMs?: number) {
     if (!speechManagerRef.current) {
       speechManagerRef.current = new SpeechPriorityManager({
         play: (t, p, customRate) => {
@@ -419,7 +431,7 @@ function MainApp({
         verbosity: voiceAssistant.settings.verbosity,
       });
     }
-    speechManagerRef.current.speak({ text, priority, dedupeKey, rate: rateOverride });
+    speechManagerRef.current.speak({ text, priority, dedupeKey, rate: rateOverride, cooldownMs });
   }
 
   // Same fallback contract as api.ts: same-origin when deployed, localhost
@@ -739,21 +751,97 @@ function MainApp({
   // ── Voice command handler (v0.4): maps a parsed VoiceIntent to app actions.
   const journeyIntentRef = useRef<{ destination: string } | null>(null);
   const voiceEmergencyRef = useRef<(() => void) | null>(null);
+  // A safety-critical action that has been announced to the user but not yet
+  // authorized. These commands (emergency, cancel emergency, end journey, share
+  // location) must not act on the first utterance: a voice user mis-hears
+  // themselves constantly, and on a busy street a bystander's "emergency" can
+  // raise somebody's real SOS. The action is parked here and only a real
+  // "confirm" runs it.
+  //
+  // This used to be a lie told to the user: the app spoke "say confirm" and
+  // nothing was ever armed, so "confirm" fell through to the default case and
+  // the user was read the entire command menu instead. Every voice-triggered
+  // safety command was unreachable.
+  //
+  // The gate lives here rather than in the voice provider because BOTH the
+  // spoken path and the typed-command path (VoiceFirstShell -> bridge ->
+  // handleVoiceCommand) funnel through this function. Gating upstream would
+  // leave typed commands unguarded.
+  const pendingConfirmRef = useRef<(() => void) | null>(null);
 
   function handleVoiceCommand(intent: VoiceIntent) {
+    // Shadows the outer speak() for this whole handler — including inside
+    // .then() continuations, which run long after this function returns but
+    // still close over this binding. Every utterance here is an answer to
+    // something the user just asked, so the dedupe cooldown must not be
+    // allowed to swallow it: a voice user who asks the same thing twice has
+    // asked twice, and silence is indistinguishable from the app having
+    // failed to hear them. Dedupe still applies to ambient warnings, which
+    // are spoken from outside this handler.
+    const speak = (text: string, priority: SpeechPriority = 5, dedupeKey?: string, rateOverride?: number) => {
+      const cleanText = text.trim();
+      if (!cleanText) return;
+      lastSpokenRef.current = cleanText;
+      speakWithPriority(cleanText, priority, dedupeKey, rateOverride, 0);
+    };
     const tab = (t: TabKey) => setActiveTab(t);
     const params = intent.parameters as Record<string, string>;
+
+    // Confirmation answers are handled before the switch: they are replies to a
+    // pending action, not commands in their own right. Handling them here is
+    // what makes the "say confirm" prompts honest.
+    if (intent.intent === 'confirm') {
+      const run = pendingConfirmRef.current;
+      pendingConfirmRef.current = null;
+      if (run) run();
+      else speak('There is nothing waiting for your confirmation.', 5);
+      return;
+    }
+    if (intent.intent === 'cancel') {
+      if (pendingConfirmRef.current) {
+        pendingConfirmRef.current = null;
+        speak('Cancelled.', 5);
+      } else {
+        // Nothing was waiting. Saying "cancelled" here would claim an action
+        // that did not happen, and moving the user somewhere unasked is
+        // disorienting — a blind user who says "cancel" to stop a wrong
+        // recognition needs to be told there is nothing to stop, not moved.
+        speak('There is nothing to cancel.', 5);
+      }
+      return;
+    }
+
     switch (intent.intent) {
       case 'emergency':
-        tab('sos');
-        announce('Emergency requested. Confirm to share your location with trusted contacts.', 'error');
+        // Parked, not performed. The user has been asked to confirm; nothing is
+        // sent until they say "confirm". Confirming opens the emergency
+        // screen, where sending runs its own visible countdown — a second,
+        // deliberate gate rather than a single spoken "confirm" firing an SOS
+        // at a bystander's "emergency".
+        pendingConfirmRef.current = () => {
+          tab('sos');
+          announce('Emergency requested. Confirm to share your location with trusted contacts.', 'error');
+        };
         speak('Emergency requested. Say confirm to share your location with trusted contacts, or cancel.', 1, 'emergency-voice');
-        voiceEmergencyRef.current?.();
         break;
       case 'cancel_emergency':
-        tab('sos');
+        // Cancelling is always the safe direction, so when an activation
+        // countdown is actually running it is stopped IMMEDIATELY rather than
+        // parked behind a confirm. A "cancel" that waits for a second
+        // "confirm" is a cancel that does not cancel — and the countdown it
+        // was meant to stop fires anyway 5 seconds later.
+        if (voiceEmergencyRef.current) {
+          voiceEmergencyRef.current();
+          voiceEmergencyRef.current = null;
+          speak('Emergency cancelled.', 1, 'emergency-cancel-voice');
+          break;
+        }
+        // No countdown running: this means cancelling an emergency that is
+        // already live, which does need confirming.
+        pendingConfirmRef.current = () => {
+          tab('sos');
+        };
         speak('Cancelling emergency. Say confirm to cancel, or cancel to abort.', 1, 'emergency-cancel-voice');
-        voiceEmergencyRef.current?.();
         break;
       case 'describe_scene':
         tab('tracking');
@@ -921,7 +1009,24 @@ function MainApp({
         }
         break;
       case 'stop_safe_journey':
-        tab('journey');
+        // Previously this only switched tabs and spoke — it never ended the
+        // journey. The user was told it was ending while it kept running,
+        // kept reporting location, and could still escalate to their contact.
+        pendingConfirmRef.current = () => {
+          tab('journey');
+          api
+            .activeJourney()
+            .then((r) => {
+              if (!r.journey) {
+                speak('You do not have an active journey.', 5, 'voice-journey-none');
+                return undefined;
+              }
+              return api
+                .endJourney(r.journey.id)
+                .then(() => speak('Journey ended. You are safe.', 2, 'voice-journey-end'));
+            })
+            .catch(() => speak('I could not end the journey.', 5));
+        };
         speak('Ending your safe journey. Say confirm, or cancel.', 3, 'voice-journey-stop');
         break;
       case 'check_journey':
@@ -941,7 +1046,7 @@ function MainApp({
           .activeJourney()
           .then((r) => {
             if (r.journey) {
-              return api.journeyCheckIn(r.journey.id).then(() => speak('Checked in. I will keep monitoring.', 5, 'voice-safe'));
+              return api.journeyCheckIn(r.journey.id).then(() => speak('Checked in. I will keep monitoring.', 2, 'voice-safe'));
             }
             speak('You do not have an active journey.', 5);
             return undefined;
@@ -953,7 +1058,7 @@ function MainApp({
           .activeJourney()
           .then((r) => {
             if (r.journey) {
-              return api.endJourney(r.journey.id).then(() => speak('Journey completed. You are safe.', 4, 'voice-arrived'));
+              return api.endJourney(r.journey.id).then(() => speak('Journey completed. You are safe.', 2, 'voice-arrived'));
             }
             speak('You do not have an active journey.', 5);
             return undefined;
@@ -972,9 +1077,67 @@ function MainApp({
           .catch(() => speak('I could not request help.', 5));
         break;
       case 'send_location':
-        tab('sos');
-        speak('Sharing your location. Say confirm, or cancel.', 3, 'voice-share-loc');
+        // Parked like every other confirmation-gated action, and the
+        // confirmation itself only OPENS the send screen — the claim is made
+        // only once it is actually true. Announcing "sharing your location"
+        // and then merely switching tabs was a second false statement on top
+        // of the un-armed confirmation.
+        pendingConfirmRef.current = () => {
+          tab('sos');
+          speak('Confirm the send on the emergency screen to share your location.', 3, 'voice-share-loc-open');
+        };
+        speak('Sharing your location. Say confirm to open the send screen, or cancel.', 3, 'voice-share-loc');
         break;
+      case 'who_acknowledged': {
+        // Was routed but had no handler, so the question a frightened user asks
+        // after sending an SOS — "did anyone get it?" — was answered with the
+        // entire command menu.
+        api
+          .activeEmergency()
+          .then((r) => {
+            const session = r.session;
+            if (!session) {
+              speak('There is no active emergency right now.', 5, 'voice-ack-none');
+              return;
+            }
+            const acks = session.acknowledgements ?? [];
+            if (acks.length === 0) {
+              speak('Your emergency is active. Nobody has acknowledged it yet.', 3, 'voice-ack-zero');
+              return;
+            }
+            const names = acks
+              .map((a) => (a as { name?: string }).name)
+              .filter((n): n is string => Boolean(n));
+            speak(
+              names.length > 0
+                ? `Acknowledged by ${names.join(', ')}.`
+                : `${acks.length} ${acks.length === 1 ? 'person has' : 'people have'} acknowledged your emergency.`,
+              3,
+              'voice-ack-list',
+            );
+          })
+          .catch(() => speak('I could not check who has acknowledged your emergency.', 5));
+        break;
+      }
+      case 'start_navigation': {
+        // Routed for "take me to the pharmacy" / "how far is the station" but
+        // never handled. The app has no turn-by-turn engine, so the honest
+        // answer is the safe-journey flow it actually implements — the same
+        // one "start a safe journey to X" already uses.
+        const dest = (intent.parameters.destination as string) || '';
+        if (intent.parameters.query === 'distance') {
+          speak('I cannot give walking distances yet. Open Settings and Places to see saved places.', 5, 'voice-nav-nodistance');
+          break;
+        }
+        if (!dest) {
+          speak('Tell me where you want to go, for example take me to the pharmacy.', 5, 'voice-nav-needdest');
+          break;
+        }
+        tab('journey');
+        journeyIntentRef.current = { destination: dest };
+        speak(`Starting a safe journey to ${dest}. Review the details on the journey screen.`, 5, 'voice-nav-start');
+        break;
+      }
       case 'permission_status':
         setShowPermissions(true);
         speak('Opening Permission Centre.', 5, 'voice-perms');
@@ -2000,6 +2163,16 @@ function MainApp({
                   onOrbToggle={() => voiceAssistant.toggleListening()}
                   onOpenTab={(t) => setActiveTab(t as TabKey)}
                   onOpenPermissions={() => setShowPermissions(true)}
+                  registerVoiceCancel={(fn) => {
+                    // The SOS activation countdown lives inside
+                    // EmergencyControl; this is the only handle the voice
+                    // layer has on it. Publishing it here is what makes the
+                    // component's spoken "Say cancel to stop" true — the
+                    // voiceEmergencyRef was declared and read for the lifetime
+                    // of the app but never assigned, so spoken "cancel"
+                    // silently did nothing and the emergency fired anyway.
+                    voiceEmergencyRef.current = fn;
+                  }}
                   onEmergency={() => {
                     setActiveTab('sos');
                     announce('Emergency requested. Use the emergency screen to share your location.', 'error');
@@ -2038,7 +2211,7 @@ function MainApp({
             )}
             {activeTab === 'routes' && (
               <section role="tabpanel" id="panel-routes" aria-labelledby="tab-routes" className="tab-panel">
-                <PlacesTab places={places} onCreated={(place) => setPlaces((prev) => [place, ...(prev ?? [])])} onDeleted={(id) => setPlaces((prev) => (prev ?? []).filter((p) => p.id !== id))} announce={announce} />
+                <PlacesTab places={places} onCreated={(place) => setPlaces((prev) => [place, ...(prev ?? [])])} onDeleted={(id) => setPlaces((prev) => (prev ?? []).filter((p) => p.id !== id))} announce={announce} speak={speak} />
               </section>
             )}
             {activeTab === 'journey' && (
@@ -2051,7 +2224,22 @@ function MainApp({
                 <SosTab
                   contacts={contacts}
                   assistanceRequests={assistanceRequests}
-                  onContactCreated={(contact) => setContacts((prev) => [...(prev ?? []), contact])}
+                  onContactCreated={(contact) =>
+                    // Upsert, not append. SosTab calls this for a NEW contact
+                    // and also for an UPDATED one (toggling live-location or
+                    // management consent passes the whole contact back), and
+                    // the call sites even say "replace in list" — but this
+                    // appended unconditionally, so flipping a consent toggle
+                    // duplicated the contact row instead of updating it. A
+                    // blind user toggling a privacy consent for their trusted
+                    // contact would hear the row appear twice.
+                    setContacts((prev) => {
+                      const list = prev ?? [];
+                      return list.some((c) => c.id === contact.id)
+                        ? list.map((c) => (c.id === contact.id ? contact : c))
+                        : [...list, contact];
+                    })
+                  }
                   onContactDeleted={(id) => setContacts((prev) => (prev ?? []).filter((c) => c.id !== id))}
                   onRequestCreated={(req) => setAssistanceRequests((prev) => [req, ...(prev ?? [])])}
                   onRequestResolved={(req) => setAssistanceRequests((prev) => (prev ?? []).map((r) => (r.id === req.id ? req : r)))}
@@ -2062,7 +2250,7 @@ function MainApp({
             )}
             {activeTab === 'community' && (
               <section role="tabpanel" id="panel-community" aria-labelledby="tab-community" className="tab-panel">
-                <CommunityTab incidents={incidents} onCreated={(incident) => setIncidents((prev) => [incident, ...(prev ?? [])])} announce={announce} />
+                <CommunityTab incidents={incidents} onCreated={(incident) => setIncidents((prev) => [incident, ...(prev ?? [])])} announce={announce} speak={speak} />
               </section>
             )}
             {activeTab === 'caregiver' && user.role !== 'BLIND_USER' && (

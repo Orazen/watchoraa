@@ -101,6 +101,14 @@ export class SpeechPriorityManager {
    */
   speak(req: SpeechRequest): void {
     // Quiet mode (verbosity 0) only allows emergency + danger.
+    //
+    // This gate is why every message reporting the OUTCOME of a safety action
+    // the user just requested is spoken at priority 2 or lower, not the
+    // default 5. At priority 5 a user who selected the "essential detail"
+    // accommodation hears nothing at all when they tap I'm safe or I'm lost —
+    // no success and no failure — and cannot tell a completed check-in from a
+    // dropped request. "Essential" is meant to remove chatter, not to silence
+    // whether help is coming. Don't normalise these back to 5.
     if (this.verbosity === 0 && req.priority > 2) return;
     if (this.deduped(req)) return;
 

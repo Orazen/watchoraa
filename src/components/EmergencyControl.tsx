@@ -20,12 +20,22 @@ export function EmergencyControl({
   onCancel,
   onResolve,
   speak,
+  registerVoiceCancel,
 }: {
   status: EmergencyStatus;
   onTrigger: (payload: { lat?: number; lng?: number; battery?: number }) => void;
   onCancel: () => void;
   onResolve: () => void;
   speak: (text: string, priority?: number, dedupeKey?: string) => void;
+  /**
+   * Registers a voice-reachable cancel for the activation countdown. The
+   * component tells the user "Say 'cancel' or press Cancel to stop", so both
+   * routes have to work — but only the button ever did. A blind user who
+   * trusted the spoken instruction was told to say a word that did nothing and
+   * then had the emergency raised anyway. The parent stores the function and
+   * the voice command handler calls it.
+   */
+  registerVoiceCancel?: (cancel: (() => void) | null) => void;
 }) {
   const [holdMs, setHoldMs] = useState(0);
   const [confirming, setConfirming] = useState(false);
@@ -79,6 +89,7 @@ export function EmergencyControl({
 
   const activatingRef = useRef(false);
   const countdownVibrateRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const countdownTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   function beginActivation() {
     // Idempotency guard against the same physical action firing twice
@@ -112,12 +123,34 @@ export function EmergencyControl({
         navigator.vibrate(200);
       }, 1000);
     }
-    // Auto-proceed after 5s unless cancelled.
-    setTimeout(() => {
+    // Auto-proceed after 5s unless cancelled. The handle is stored so the
+    // countdown can actually be cancelled: it used to be a bare setTimeout, so
+    // pressing Cancel only hid the countdown UI while this timer kept running
+    // and fired onTrigger anyway. The app advertised a 5-second cancel window,
+    // and a user who used it still got the emergency they had declined.
+    countdownTimerRef.current = setTimeout(() => {
+      countdownTimerRef.current = null;
       setConfirming(false);
       activatingRef.current = false;
+      registerVoiceCancel?.(null);
       onTrigger({});
     }, 5000);
+    // Publish the same cancel to the voice layer while the window is open.
+    registerVoiceCancel?.(() => {
+      setConfirming(false);
+      activatingRef.current = false;
+      cancelCountdown();
+      stopCountdownVibration();
+      registerVoiceCancel?.(null);
+    });
+  }
+
+  /** Cancels the auto-proceed countdown. Safe to call when none is running. */
+  function cancelCountdown() {
+    if (countdownTimerRef.current) {
+      clearTimeout(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
   }
 
   function stopCountdownVibration() {
@@ -131,8 +164,16 @@ export function EmergencyControl({
   useEffect(() => {
     return () => {
       if (holdTimer.current) clearInterval(holdTimer.current);
+      cancelCountdown();
       stopCountdownVibration();
+      // Don't leave a stale cancel pointing at an unmounted component; the
+      // voice handler would call setState on a dead tree.
+      registerVoiceCancel?.(null);
     };
+    // Intentionally mount-only: registerVoiceCancel is a fresh closure each
+    // render, and re-running this would clear a cancel that beginActivation
+    // just published.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // When active: override with a status screen.
@@ -166,10 +207,10 @@ export function EmergencyControl({
             Emergency will activate in 5 seconds. <strong>Say “cancel” or press Cancel</strong> to stop.
           </p>
           <div className="control-inline">
-            <button className="primary-btn" style={{ minHeight: 64, background: 'var(--danger)', color: '#fff' }} onClick={() => { setConfirming(false); activatingRef.current = false; stopCountdownVibration(); onCancel(); }}>
+            <button className="primary-btn" style={{ minHeight: 64, background: 'var(--danger)', color: '#fff' }} onClick={() => { setConfirming(false); activatingRef.current = false; cancelCountdown(); stopCountdownVibration(); onCancel(); }}>
               <span aria-hidden="true">✋</span> Cancel
             </button>
-            <button className="secondary-btn" style={{ minHeight: 64 }} onClick={() => { setConfirming(false); stopCountdownVibration(); onTrigger({}); }}>
+            <button className="secondary-btn" style={{ minHeight: 64 }} onClick={() => { setConfirming(false); activatingRef.current = false; cancelCountdown(); stopCountdownVibration(); onTrigger({}); }}>
               Activate now
             </button>
           </div>

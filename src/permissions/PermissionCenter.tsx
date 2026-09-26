@@ -2,11 +2,12 @@
 // surface. Reached from onboarding, the dashboard status card, Settings, and
 // the voice command "Check my permissions".
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { describePermissionState, type PermissionService } from './permissionService';
 import type { PermissionKey, PermissionSnapshot } from './permissionTypes';
 import { PERMISSION_KEYS } from './permissionService';
 import { useLiveAnnouncer } from '../accessibility/LiveAnnouncer';
+import { useFocusTrap } from '../accessibility/FocusManager';
 
 const CAN_REQUEST: PermissionKey[] = ['camera', 'microphone', 'location', 'notifications', 'motion', 'battery'];
 
@@ -14,6 +15,27 @@ export function PermissionCenter({ service, onClose }: { service: PermissionServ
   const [snap, setSnap] = useState<PermissionSnapshot>(service.snapshot());
   const [busy, setBusy] = useState<PermissionKey | null>(null);
   const { announce } = useLiveAnnouncer();
+
+  // It is rendered inside a full-viewport opaque .modal-scrim, so it IS modal.
+  // With aria-modal="false" a screen reader did not hide the dimmed, blurred
+  // dashboard underneath, so swipe navigation walked the user through an app
+  // they cannot see or use. Trapping focus makes the modal semantics honest.
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  useFocusTrap(dialogRef, true);
+
+  // Keyboard equivalent of clicking the scrim: without this, "Close" is
+  // mouse-only and the dialog is a WCAG 2.1.2 keyboard trap for a screen-reader
+  // user who dismissed it without a pointer.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
 
   useEffect(() => service.subscribe(setSnap), [service]);
 
@@ -26,7 +48,14 @@ export function PermissionCenter({ service, onClose }: { service: PermissionServ
   }
 
   return (
-    <div className="permission-center" role="dialog" aria-modal="false" aria-label="Permission Centre">
+    <div
+      className="permission-center"
+      ref={dialogRef}
+      role="dialog"
+      aria-modal="true"
+      aria-label="Permission Centre"
+      tabIndex={-1}
+    >
       <div className="section-head">
         <div>
           <p className="topbar-kicker">permission centre</p>
@@ -53,12 +82,20 @@ export function PermissionCenter({ service, onClose }: { service: PermissionServ
                   {describePermissionState(info.state)}
                 </span>
               </div>
-              <p className="permission-explanation" aria-describedby={`perm-${key}`}>
+              <p className="permission-explanation" id={`perm-${key}`}>
                 {info.explanation}
               </p>
               {info.detail && <p className="permission-detail">{info.detail}</p>}
               {canReq && (info.state === 'not-requested' || info.state === 'denied' || info.state === 'temporarily-unavailable') && (
-                <button className="secondary-btn" disabled={busy === key} onClick={() => request(key)}>
+                <button
+                  className="secondary-btn"
+                  disabled={busy === key}
+                  onClick={() => request(key)}
+                  // Explain the consequence at the point of activation, where a
+                  // screen-reader user actually hears it. The reference used to
+                  // dangle on the <p> below, pointing at no element at all.
+                  aria-describedby={`perm-${key}`}
+                >
                   {busy === key ? 'Requesting…' : `Enable ${info.label}`}
                 </button>
               )}

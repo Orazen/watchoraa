@@ -49,10 +49,21 @@ function LoadingRows({ label, rows = 3, className }: { label: string; rows?: num
 }
 
 /** Bordered list-row title row with the section's lucide icon, paired with
- *  visible text (icons are decorative and hidden from the a11y tree). */
-function SectionCardTitle({ icon, children }: { icon: React.ReactNode; children: React.ReactNode }) {
+ * visible text (icons are decorative and hidden from the a11y tree). The
+ * heading level is a prop because each of these cards IS a top-level band of
+ * the Admin screen (the shell already supplied the single <h1>), so they all
+ * render at level 2 and the panel sub-headings below them at level 3. */
+function SectionCardTitle({
+  icon,
+  children,
+  as,
+}: {
+  icon: React.ReactNode;
+  children: React.ReactNode;
+  as?: 'h2' | 'h3';
+}) {
   return (
-    <CardTitle className="flex items-center gap-2.5">
+    <CardTitle as={as} className="flex items-center gap-2.5">
       {icon}
       {children}
     </CardTitle>
@@ -168,14 +179,23 @@ export function AdminTab({ announce }: { announce: (message: string, tone?: Tone
     <div className="mx-auto w-full max-w-3xl">
       <section className="mt-6">
         <div className="mb-4">
+          {/* No <h2> here on purpose. The shell already renders the screen's one
+              <h1> ("Admin") in the topbar; a second "Admin" heading directly
+              below it made the screen title announce twice. The visible panel
+              card titles below are the level-2 headings for this screen. */}
           <p className="text-sm font-semibold uppercase tracking-widest text-muted-foreground">Moderation</p>
-          <h2 className="mt-1 font-display text-2xl font-semibold tracking-tight text-foreground">Admin</h2>
         </div>
+        {/* Tab/panel wiring mirrors the app shell (App.tsx): each tab has an id
+            and aria-controls, each panel has role="tabpanel", the matching id,
+            and aria-labelledby back to its tab. Without it the tablist announced
+            as an anonymous list of tabs with no relationship to the content. */}
         <div className="flex flex-wrap gap-2" role="tablist" aria-label="Admin sections">
           {(['users', 'incidents', 'sos', 'ai', 'prompts', 'audit'] as const).map((key) => (
             <Button
               key={key}
               role="tab"
+              id={`tab-admin-${key}`}
+              aria-controls={`panel-admin-${key}`}
               aria-selected={section === key}
               variant={section === key ? 'secondary' : 'ghost'}
               onClick={() => setSection(key)}
@@ -197,10 +217,10 @@ export function AdminTab({ announce }: { announce: (message: string, tone?: Tone
       </section>
 
       {section === 'users' && (
-        <section className="mt-6">
+        <section role="tabpanel" id="panel-admin-users" aria-labelledby="tab-admin-users" className="mt-6">
           <Card>
             <CardHeader>
-              <SectionCardTitle icon={<UsersRound aria-hidden="true" className="size-5 shrink-0 text-primary" />}>
+              <SectionCardTitle as="h2" icon={<UsersRound aria-hidden="true" className="size-5 shrink-0 text-primary" />}>
                 Users
               </SectionCardTitle>
               <CardDescription>Roles and account status for everyone on the platform.</CardDescription>
@@ -247,10 +267,10 @@ export function AdminTab({ announce }: { announce: (message: string, tone?: Tone
       )}
 
       {section === 'incidents' && (
-        <section className="mt-6">
+        <section role="tabpanel" id="panel-admin-incidents" aria-labelledby="tab-admin-incidents" className="mt-6">
           <Card>
             <CardHeader>
-              <SectionCardTitle icon={<Megaphone aria-hidden="true" className="size-5 shrink-0 text-primary" />}>
+              <SectionCardTitle as="h2" icon={<Megaphone aria-hidden="true" className="size-5 shrink-0 text-primary" />}>
                 Incidents
               </SectionCardTitle>
               <CardDescription>Journey incidents reported by users, newest moderation surface first.</CardDescription>
@@ -289,10 +309,10 @@ export function AdminTab({ announce }: { announce: (message: string, tone?: Tone
       )}
 
       {section === 'sos' && (
-        <section className="mt-6">
+        <section role="tabpanel" id="panel-admin-sos" aria-labelledby="tab-admin-sos" className="mt-6">
           <Card>
             <CardHeader>
-              <SectionCardTitle icon={<Siren aria-hidden="true" className="size-5 shrink-0 text-destructive" />}>
+              <SectionCardTitle as="h2" icon={<Siren aria-hidden="true" className="size-5 shrink-0 text-destructive" />}>
                 SOS
               </SectionCardTitle>
               <CardDescription>Assistance requests raised from the SOS button.</CardDescription>
@@ -326,10 +346,10 @@ export function AdminTab({ announce }: { announce: (message: string, tone?: Tone
       )}
 
       {section === 'ai' && (
-        <section className="mt-6">
+        <section role="tabpanel" id="panel-admin-ai" aria-labelledby="tab-admin-ai" className="mt-6">
           <Card>
             <CardHeader>
-              <SectionCardTitle icon={<BrainCircuit aria-hidden="true" className="size-5 shrink-0 text-primary" />}>
+              <SectionCardTitle as="h2" icon={<BrainCircuit aria-hidden="true" className="size-5 shrink-0 text-primary" />}>
                 AI usage
               </SectionCardTitle>
               <CardDescription>Platform-wide request volume, success and latency, live vs demo.</CardDescription>
@@ -353,7 +373,10 @@ export function AdminTab({ announce }: { announce: (message: string, tone?: Tone
                     <StatCard label="Avg latency" value={`${aiStats.averageLatencyMs ?? '—'} ms`} />
                   </div>
                   <div>
-                    <h4 className="font-display text-lg font-semibold tracking-tight text-foreground">By mode</h4>
+                    {/* Sub-headings inside the panel's <h2> card: level 3. They
+                        were <h4>, so the outline jumped h2 → h4 with no
+                        level 3 in between. */}
+                    <h3 className="font-display text-lg font-semibold tracking-tight text-foreground">By mode</h3>
                     <ul className="mt-2 flex flex-col divide-y divide-foreground/10">
                       {aiStats.byMode.map((entry) => (
                         <li key={entry.mode} className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
@@ -365,7 +388,7 @@ export function AdminTab({ announce }: { announce: (message: string, tone?: Tone
                   </div>
                   {aiStats.recentErrors.length > 0 ? (
                     <div>
-                      <h4 className="font-display text-lg font-semibold tracking-tight text-foreground">Recent errors</h4>
+                      <h3 className="font-display text-lg font-semibold tracking-tight text-foreground">Recent errors</h3>
                       <ul className="mt-2 flex flex-col divide-y divide-foreground/10">
                         {aiStats.recentErrors.map((err) => (
                           <li
@@ -389,10 +412,10 @@ export function AdminTab({ announce }: { announce: (message: string, tone?: Tone
       )}
 
       {section === 'prompts' && (
-        <section className="mt-6">
+        <section role="tabpanel" id="panel-admin-prompts" aria-labelledby="tab-admin-prompts" className="mt-6">
           <Card>
             <CardHeader>
-              <SectionCardTitle icon={<ScrollText aria-hidden="true" className="size-5 shrink-0 text-primary" />}>
+              <SectionCardTitle as="h2" icon={<ScrollText aria-hidden="true" className="size-5 shrink-0 text-primary" />}>
                 Prompt versions
               </SectionCardTitle>
               <CardDescription>
@@ -465,10 +488,10 @@ export function AdminTab({ announce }: { announce: (message: string, tone?: Tone
       )}
 
       {section === 'audit' && (
-        <section className="mt-6">
+        <section role="tabpanel" id="panel-admin-audit" aria-labelledby="tab-admin-audit" className="mt-6">
           <Card>
             <CardHeader>
-              <SectionCardTitle icon={<ScrollText aria-hidden="true" className="size-5 shrink-0 text-primary" />}>
+              <SectionCardTitle as="h2" icon={<ScrollText aria-hidden="true" className="size-5 shrink-0 text-primary" />}>
                 Audit log
               </SectionCardTitle>
               <CardDescription>Recorded administrative and caregiver actions across the platform.</CardDescription>

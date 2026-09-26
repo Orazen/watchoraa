@@ -100,7 +100,14 @@ export function PermissionOnboarding({
   }
 
   return (
-    <div className="onboarding-backdrop" ref={containerRef} role="dialog" aria-modal="true" aria-labelledby="permission-onboarding-title">
+    <div
+      className="onboarding-backdrop"
+      ref={containerRef}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="permission-onboarding-title"
+      tabIndex={-1}
+    >
       <section className="panel onboarding-card onboarding-card-wide">
         <div className="section-head">
           <div>

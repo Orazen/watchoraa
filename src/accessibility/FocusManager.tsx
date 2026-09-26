@@ -35,7 +35,31 @@ export function useFocusOnShow(id: string | undefined, active: boolean): void {
   }, [active, id]);
 }
 
-/** Modal focus trap: keeps Tab within the dialog, returns focus on close. */
+/**
+ * Selector for elements a keyboard user can actually land on. Disabled and
+ * `tabindex="-1"` controls are excluded: calling .focus() on a disabled
+ * element is a no-op, which would silently break the Tab cycle.
+ */
+const FOCUSABLE_SELECTOR =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/** Ordered list of focusable, screen-reader-visible elements inside a dialog. */
+function getFocusables(container: HTMLElement): HTMLElement[] {
+  return Array.from(container.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR)).filter(
+    (el) => el.getAttribute('aria-hidden') !== 'true',
+  );
+}
+
+/**
+ * Modal focus trap: moves focus INTO the dialog on open, keeps Tab within it,
+ * and returns focus to the triggering control on close.
+ *
+ * Moving focus in is not optional for a `aria-modal="true"` dialog: assistive
+ * tech hides everything outside the dialog, so focus left on the page behind
+ * it is a control the screen reader has just declared hidden. The container
+ * itself must therefore accept `tabIndex={-1}` so it can receive focus when it
+ * has no focusable children.
+ */
 export function useFocusTrap(containerRef: React.RefObject<HTMLElement | null>, active: boolean): void {
   const restoreRef = useRef<HTMLElement | null>(null);
 
@@ -45,9 +69,16 @@ export function useFocusTrap(containerRef: React.RefObject<HTMLElement | null>, 
     if (!container) return;
     restoreRef.current = document.activeElement as HTMLElement | null;
 
+    // Wait a frame so the dialog is laid out (and any children rendered) before
+    // we try to focus into it.
+    const frame = requestAnimationFrame(() => {
+      if (!container.isConnected) return;
+      focusElement(getFocusables(container)[0] ?? container);
+    });
+
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Tab') return;
-      const focusables = container.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])');
+      const focusables = getFocusables(container);
       if (focusables.length === 0) return;
       const first = focusables[0]!;
       const last = focusables[focusables.length - 1]!;
@@ -61,6 +92,7 @@ export function useFocusTrap(containerRef: React.RefObject<HTMLElement | null>, 
     };
     container.addEventListener('keydown', onKey);
     return () => {
+      cancelAnimationFrame(frame);
       container.removeEventListener('keydown', onKey);
       // Restore focus to the triggering control.
       if (restoreRef.current) focusElement(restoreRef.current);

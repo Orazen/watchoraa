@@ -24,9 +24,19 @@ const CardHeader = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>>(
 );
 CardHeader.displayName = 'CardHeader';
 
-const CardTitle = forwardRef<HTMLHeadingElement, HTMLAttributes<HTMLHeadingElement>>(
-  ({ className, ...props }, ref) => (
-    <h3
+/** Heading levels a card title can render as. The default stays `h3` (the
+ *  shadcn/reUI convention) so every existing call site is unchanged; screens
+ *  whose card title is the FIRST heading under the shell's single `<h1>` pass
+ *  `as="h2"` so a "navigate by heading" rotor never skips level 2. A card
+ *  genuinely nested inside another card's section keeps `h3`. */
+export type CardTitleLevel = 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6';
+
+const CardTitle = forwardRef<
+  HTMLHeadingElement,
+  HTMLAttributes<HTMLHeadingElement> & { as?: CardTitleLevel }
+>(
+  ({ className, as: Heading = 'h3', ...props }, ref) => (
+    <Heading
       ref={ref}
       className={cn('font-display text-xl leading-tight font-semibold tracking-tight', className)}
       {...props}

@@ -12,6 +12,7 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { api, ApiError, type IncidentReport } from '../api';
+import type { SpeechPriority } from '../speechPriority';
 import type { Tone } from './shared';
 import {
   Alert,
@@ -71,10 +72,13 @@ export function CommunityTab({
   incidents,
   onCreated,
   announce,
+  speak,
 }: {
   incidents: IncidentReport[] | null;
   onCreated: (incident: IncidentReport) => void;
   announce: (message: string, tone?: Tone) => void;
+  /** Optional so no call site breaks until App.tsx wires the real function. */
+  speak?: (text: string, priority?: SpeechPriority, dedupeKey?: string) => void;
 }) {
   const [category, setCategory] = useState('Sidewalk');
   const [description, setDescription] = useState('');
@@ -84,9 +88,13 @@ export function CommunityTab({
   async function addReport() {
     if (!description.trim()) {
       announce('Describe the hazard before submitting.', 'warning');
+      speak?.('Describe the hazard before submitting.', 5, 'report-desc-required');
       return;
     }
     setSaving(true);
+    // Speak before the geolocation await below: it can block for up to its 6s
+    // timeout while the only feedback is a "Sending…" button label.
+    speak?.('Sending your report.', 5, 'report-sending');
     try {
       // Auto-attach current position so blind reporters never type an address.
       // Best-effort: the report is still submitted if GPS fails (it just won't
@@ -105,9 +113,11 @@ export function CommunityTab({
       const { incident } = await api.createIncident({ category: category.trim() || 'General', description: description.trim(), severity, lat, lng });
       onCreated(incident);
       setDescription('');
+      speak?.(lat != null ? 'Report submitted and pinned to your current location.' : 'Report submitted.', 5, 'report-submitted');
       announce(lat != null ? 'Report submitted and pinned to your current location.' : 'Report submitted.', 'online');
     } catch (error) {
       announce(error instanceof ApiError ? error.message : 'Could not submit this report.', 'error');
+      speak?.('Could not submit this report.', 5, 'report-submit-failed');
     } finally {
       setSaving(false);
     }

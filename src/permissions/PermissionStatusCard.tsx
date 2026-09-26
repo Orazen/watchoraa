@@ -25,7 +25,11 @@ export function PermissionStatusCard({ service, onOpen }: { service: PermissionS
           {ready ? '✅' : '⚠️'}
         </span>
         <div>
-          <h3>Permissions</h3>
+          {/* h2, not h3: this card is a top-level band on the Home screen,
+              sitting as a sibling of the h2 "Status" card. The shell renders
+              the single h1, and a heading one level deeper than its siblings
+              reads as nested when it is not. */}
+          <h2>Permissions</h2>
           <p className="status-line" aria-live="polite">
             {statusLine}
           </p>

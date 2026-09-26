@@ -106,7 +106,10 @@ function DashboardActionCard({
             <Icon className="size-6" />
           </span>
           <div className="min-w-0">
-            <CardTitle className="text-2xl">{title}</CardTitle>
+            {/* Each primary action is a top-level band of the Home screen, so its
+                title is the first heading under the shell's <h1> — level 2. The
+                default <h3> made the outline h1 → h3 with no level 2 at all. */}
+            <CardTitle as="h2" className="text-2xl">{title}</CardTitle>
             <CardDescription className="mt-1 text-base leading-relaxed">{explanation}</CardDescription>
           </div>
         </div>
@@ -251,7 +254,7 @@ function LiveLocationCard({
             <MapPin className="size-6" />
           </span>
           <div className="min-w-0">
-            <CardTitle className="text-xl">Live location</CardTitle>
+            <CardTitle as="h2" className="text-xl">Live location</CardTitle>
             <p className="mt-1 text-base leading-relaxed" aria-live="polite">{summary}</p>
           </div>
         </div>
@@ -297,6 +300,7 @@ export function VoiceFirstDashboard({
   onCancelEmergency,
   onResolveEmergency,
   speak,
+  registerVoiceCancel,
 }: {
   permissionService: PermissionService;
   emergency: EmergencyStatus;
@@ -315,6 +319,8 @@ export function VoiceFirstDashboard({
   onCancelEmergency: () => void;
   onResolveEmergency: () => void;
   speak: (text: string, priority?: number, dedupeKey?: string) => void;
+  /** Lets the voice command handler cancel the emergency activation countdown. */
+  registerVoiceCancel?: (cancel: (() => void) | null) => void;
 }) {
   return (
     <div className="mx-auto w-full max-w-3xl px-4 pb-10 pt-2">
@@ -351,7 +357,10 @@ export function VoiceFirstDashboard({
               )}
             </span>
             <div className="min-w-0">
-              <CardTitle className="text-xl">Status</CardTitle>
+              {/* Top-level band of the Home screen: the first heading after the
+                  shell's <h1>, so it must be level 2, not the CardTitle default
+                  level 3. */}
+              <CardTitle as="h2" className="text-xl">Status</CardTitle>
               <p className="mt-1 text-base leading-relaxed text-foreground" aria-live="polite">
                 {emergency.state === 'active'
                   ? 'Emergency active.'
@@ -398,7 +407,7 @@ export function VoiceFirstDashboard({
 
       {emergency.state === 'active' && (
         <div className="mt-6">
-          <EmergencyControl status={emergency} onTrigger={onEmergency} onCancel={onCancelEmergency} onResolve={onResolveEmergency} speak={speak} />
+          <EmergencyControl status={emergency} onTrigger={onEmergency} onCancel={onCancelEmergency} onResolve={onResolveEmergency} speak={speak} registerVoiceCancel={registerVoiceCancel} />
         </div>
       )}
 
@@ -464,7 +473,7 @@ export function VoiceFirstDashboard({
 
       {emergency.state !== 'active' && (
         <section aria-label="Emergency" className="mt-6">
-          <EmergencyControl status={emergency} onTrigger={onEmergency} onCancel={onCancelEmergency} onResolve={onResolveEmergency} speak={speak} />
+          <EmergencyControl status={emergency} onTrigger={onEmergency} onCancel={onCancelEmergency} onResolve={onResolveEmergency} speak={speak} registerVoiceCancel={registerVoiceCancel} />
         </section>
       )}
     </div>

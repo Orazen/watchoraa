@@ -13,7 +13,13 @@ function normalize(text: string): string {
 }
 
 function has(text: string, ...needles: string[]): boolean {
-  return needles.some((n) => text.includes(n));
+  // Needles are normalized exactly like the transcript is. normalize() turns
+  // "'" into a space, so a rule written the way a human actually speaks —
+  // "i'm safe" — becomes "i m safe" and would otherwise never match anything.
+  // That failure is invisible in review: the rule still reads correctly, the
+  // file still compiles, and the command simply never routes. Normalizing
+  // here closes the whole class instead of patching contractions one by one.
+  return needles.some((n) => text.includes(normalize(n)));
 }
 
 /** Extracts a destination from phrases like "to the railway station". */
@@ -49,6 +55,14 @@ export function matchDeterministicCommand(transcript: string): VoiceIntent | nul
   if (!t) return null;
 
   // ── Emergency (highest priority; local, deterministic) ──
+  // "Who acknowledged?" is a status QUESTION, not a request to raise the alarm,
+  // so it must be tested before the emergency match below. The emergency rule
+  // matches the bare substring "sos", which otherwise swallows "who
+  // acknowledged my sos" and re-arms the alarm for the user who is merely
+  // checking whether help arrived — the one flow that should be read-only.
+  if (has(t, 'who acknowledged', 'who acknowledged my sos', 'who acknowledged my emergency', 'did anyone acknowledge', 'has anyone acknowledged')) {
+    return intent('who_acknowledged', {}, false, 1);
+  }
   // Cancel must be checked BEFORE the bare emergency match, otherwise
   // "cancel emergency" would match "emergency".
   if (has(t, 'cancel emergency', 'cancel sos', 'stop emergency', 'stand down')) {
@@ -59,9 +73,6 @@ export function matchDeterministicCommand(transcript: string): VoiceIntent | nul
   }
   if (has(t, 'send my current location', 'send my location', 'share my location', 'share location')) {
     return intent('send_location', {}, true, 1);
-  }
-  if (has(t, 'who acknowledged', 'who acknowledged my sos', 'who acknowledged my emergency')) {
-    return intent('who_acknowledged', {}, false, 1);
   }
 
   // ── Safe Journey ──
@@ -78,7 +89,7 @@ export function matchDeterministicCommand(transcript: string): VoiceIntent | nul
   if (has(t, 'i am safe', "i'm safe", 'i arrived', 'arrived safely', 'made it')) {
     return intent(has(t, 'i arrived', 'arrived safely', 'made it') ? 'i_arrived' : 'i_am_safe', {}, false, 1);
   }
-  if (has(t, 'i am lost', "i'm lost", 'lost my way', 'i am confused', 'help i am lost')) {
+  if (has(t, 'i am lost', "i'm lost", 'lost my way', 'i am confused', "i'm confused", 'help i am lost', "help i'm lost")) {
     return intent('i_am_lost', {}, false, 1);
   }
 

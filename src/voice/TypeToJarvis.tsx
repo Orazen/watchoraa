@@ -41,8 +41,16 @@ export function TypeToJarvis({ autoFocus = false }: { autoFocus?: boolean }) {
   }
 
   return (
-    <div className="type-jarvis" role="search">
-      <label className="type-jarvis-label" htmlFor="type-jarvis-input">
+    // Not a landmark, and specifically NOT role="search": this is a typed/voice
+    // command router, not a site search, so a "search" landmark pointed at
+    // something that is not search and left the actual "Type a command" region
+    // undiscoverable in the rotor. role="group" names the label + input +
+    // Send button + hint as one logical control cluster without inventing a
+    // second landmark. (On Home the enclosing section is already labelled
+    // "Give Watchora a command", so a landmark here would have nested a
+    // near-identically-named region inside it.)
+    <div className="type-jarvis" role="group" aria-labelledby="type-jarvis-label">
+      <label className="type-jarvis-label" id="type-jarvis-label" htmlFor="type-jarvis-input">
         {voiceBlocked
           ? 'Voice is not available here — type your command and Watchora will speak the answer.'
           : 'Or type a command (same as speaking):'}

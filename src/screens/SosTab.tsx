@@ -48,6 +48,12 @@ export function SosTab({
   // non-visually; the countdown IS the confirmation.
   const [countdown, setCountdown] = useState<number | null>(null);
   const [activeEmergency, setActiveEmergency] = useState<{ id: string; cancelable: boolean } | null>(null);
+  // Two-step remove: deleting a trusted contact is irreversible and there is no
+  // undo anywhere in the app, so the first press arms a destructive confirm
+  // rather than firing the delete. window.confirm is unusable non-visually, so
+  // the confirm state is announced in speech and the button label itself.
+  const [confirmRemoveId, setConfirmRemoveId] = useState<string | null>(null);
+  const [removingId, setRemovingId] = useState<string | null>(null);
 
   function startSosCountdown() {
     if (countdown != null || sending) return;
@@ -78,6 +84,11 @@ export function SosTab({
     let cancelled = false;
     (async () => {
       setSending(true);
+      // Speak BEFORE the geolocation await: getCurrentPosition can block for up
+      // to its 5s timeout, and the "Sending…" takeover that follows is purely
+      // visual. Without this line a blind user sits in up to five seconds of
+      // total dead air at the exact moment the alarm is going out.
+      speak('Sending your emergency alert.', 1, 'sos-sending');
       try {
         // Grab current position so the session carries live coordinates.
         let coords: { lat: number; lng: number; accuracy?: number } | undefined;
@@ -134,6 +145,7 @@ export function SosTab({
       speak('Emergency cancelled. Your contacts were not notified.', 1, 'sos-live-cancelled');
     } catch {
       announce('The cancellation window has closed. Use Resolve when you are safe.', 'warning');
+      speak('Could not cancel. The window has closed. Use Resolve when you are safe.', 2, 'sos-cancel-failed');
     }
   }
 
@@ -146,17 +158,20 @@ export function SosTab({
       speak('Marked as resolved. You are safe.', 1, 'sos-resolved');
     } catch {
       announce('Could not resolve this emergency session.', 'error');
+      speak('Could not resolve. This emergency session is still active.', 2, 'sos-resolve-failed');
     }
   }
 
   async function addContact() {
-    if (!name.trim()) {
+    const contactName = name.trim();
+    if (!contactName) {
       announce('Enter a contact name.', 'warning');
+      speak('Enter a contact name.', 5, 'contact-name-required');
       return;
     }
     try {
       const { contact } = await api.createContact({
-        name: name.trim(),
+        name: contactName,
         phone: phone.trim() || undefined,
         email: email.trim() || undefined,
         relationship: relationship.trim() || undefined,
@@ -170,6 +185,7 @@ export function SosTab({
       setRelationship('');
       setShareLocOnAdd(false);
       setManageOnAdd(false);
+      speak(`${contactName} added to your emergency contacts.`, 5, 'contact-added');
       announce(
         manageOnAdd
           ? 'Contact added. Once they create a Watchora account with this email, they can adjust your settings remotely.'
@@ -178,15 +194,38 @@ export function SosTab({
       );
     } catch (error) {
       announce(error instanceof ApiError ? error.message : 'Could not add this contact.', 'error');
+      speak(`Could not add ${contactName}.`, 5, 'contact-add-failed');
     }
   }
 
-  async function removeContact(id: string) {
+  /** First press arms the confirm; second press deletes. Nothing fires silently. */
+  function requestRemoveContact(contact: TrustedContact) {
+    if (confirmRemoveId !== contact.id) {
+      setConfirmRemoveId(contact.id);
+      speak(`Remove ${contact.name} from your emergency contacts? Press Confirm remove to go ahead.`, 3, `confirm-remove-${contact.id}`);
+      return;
+    }
+    setConfirmRemoveId(null);
+    void removeContact(contact);
+  }
+
+  function keepContact(contact: TrustedContact) {
+    setConfirmRemoveId(null);
+    speak(`${contact.name} kept.`, 5, `keep-contact-${contact.id}`);
+  }
+
+  async function removeContact(contact: TrustedContact) {
+    setRemovingId(contact.id);
     try {
-      await api.deleteContact(id);
-      onContactDeleted(id);
+      await api.deleteContact(contact.id);
+      onContactDeleted(contact.id);
+      announce(`Removed ${contact.name} from your emergency contacts.`, 'online');
+      speak(`Removed ${contact.name} from your emergency contacts.`, 3, `removed-contact-${contact.id}`);
     } catch (error) {
       announce(error instanceof ApiError ? error.message : 'Could not remove this contact.', 'error');
+      speak(`Could not remove ${contact.name}.`, 3, 'remove-contact-failed');
+    } finally {
+      setRemovingId(null);
     }
   }
 
@@ -194,6 +233,13 @@ export function SosTab({
     try {
       const { contact: updated } = await api.updateContact(contact.id, { canSeeLocation: !contact.canSeeLocation });
       onContactCreated(updated); // same shape; replace in list
+      speak(
+        updated.canSeeLocation
+          ? `${contact.name} can now see your live location.`
+          : `Live location sharing with ${contact.name} is off.`,
+        5,
+        `location-consent-${contact.id}`,
+      );
       announce(
         updated.canSeeLocation
           ? `${contact.name} can now see your live location during safe journeys.`
@@ -224,6 +270,7 @@ export function SosTab({
       );
     } catch (error) {
       announce(error instanceof ApiError ? error.message : 'Could not update remote management.', 'error');
+      speak('Could not update remote management.', 5, 'manage-consent-failed');
     }
   }
 
@@ -238,8 +285,10 @@ export function SosTab({
       const { request } = await api.resolveAssistanceRequest(id);
       onRequestResolved(request);
       announce('Marked as resolved.', 'online');
+      speak('SOS request marked as resolved.', 5, 'request-resolved');
     } catch (error) {
       announce(error instanceof ApiError ? error.message : 'Could not update this request.', 'error');
+      speak('Could not update this request.', 5, 'request-resolve-failed');
     }
   }
 
@@ -393,15 +442,36 @@ export function SosTab({
                           {contact.canManageSettings ? 'Remote care on' : 'Remote care off'}
                         </Button>
                       )}
-                      <Button
-                        variant="outline"
-                        className="border-destructive/60 text-destructive hover:bg-destructive/10"
-                        onClick={() => removeContact(contact.id)}
-                        aria-label={`Remove ${contact.name}`}
-                      >
-                        <Trash aria-hidden="true" className="h-4 w-4" />
-                        Remove
-                      </Button>
+                      {confirmRemoveId === contact.id ? (
+                        <>
+                          <Button
+                            variant="destructive"
+                            disabled={removingId === contact.id}
+                            onClick={() => requestRemoveContact(contact)}
+                            aria-label={`Confirm remove ${contact.name}`}
+                          >
+                            <Trash aria-hidden="true" className="h-4 w-4" />
+                            Confirm remove
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => keepContact(contact)}
+                            aria-label={`Keep ${contact.name}`}
+                          >
+                            Keep
+                          </Button>
+                        </>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          className="border-destructive/60 text-destructive hover:bg-destructive/10"
+                          onClick={() => requestRemoveContact(contact)}
+                          aria-label={`Remove ${contact.name}`}
+                        >
+                          <Trash aria-hidden="true" className="h-4 w-4" />
+                          Remove
+                        </Button>
+                      )}
                     </div>
                   </li>
                 ))}
