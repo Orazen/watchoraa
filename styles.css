@@ -18,22 +18,22 @@
   --panel-border: rgba(26, 26, 26, 0.3);
   --panel-border-strong: #1a1a1a;
   --text: #1a1a1a;
-  --muted: #6b6b60;
-  --primary: #1a1a1a;
-  --primary-strong: #1a1a1a;
-  --primary-soft: rgba(240, 215, 255, 0.55);
-  --accent: #f0d7ff;
-  --accent-strong: #1a1a1a;
-  --secondary: #034f46;
-  --success: #034f46;
-  --warning: #a66a12;
+  --w-muted: #6b6b60;
+  --w-primary: #1a1a1a;
+  --w-primary-strong: #1a1a1a;
+  --w-primary-soft: rgba(240, 215, 255, 0.55);
+  --w-accent: #f0d7ff;
+  --w-accent-strong: #1a1a1a;
+  --w-secondary: #034f46;
+  --w-success: #034f46;
+  --w-warning: #a66a12;
   --danger: #a3241f;
   --danger-soft: rgba(163, 36, 31, 0.12);
   --shadow: none;
-  --radius-xl: 40px;
-  --radius-lg: 32px;
-  --radius-md: 18px;
-  --radius-sm: 12px;
+  --w-radius-xl: 40px;
+  --w-radius-lg: 32px;
+  --w-radius-md: 18px;
+  --w-radius-sm: 12px;
   --ink-border: 2px solid #1a1a1a;
   /* Typography + focus system */
   --font-ui: 'Figtree', system-ui, -apple-system, sans-serif;
@@ -55,14 +55,14 @@
   --panel-border: rgba(255, 255, 255, 0.24);
   --panel-border-strong: #ffffeb;
   --text: #ffffeb;
-  --muted: #b8b8a8;
-  --primary: #ffffeb;
-  --primary-strong: #ffffeb;
-  --primary-soft: rgba(240, 215, 255, 0.16);
-  --accent: #f0d7ff;
-  --accent-strong: #1a1a1a;
-  --secondary: #3ea391;
-  --success: #3ea391;
+  --w-muted: #b8b8a8;
+  --w-primary: #ffffeb;
+  --w-primary-strong: #ffffeb;
+  --w-primary-soft: rgba(240, 215, 255, 0.16);
+  --w-accent: #f0d7ff;
+  --w-accent-strong: #1a1a1a;
+  --w-secondary: #3ea391;
+  --w-success: #3ea391;
   --danger-soft: rgba(255, 138, 128, 0.16);
   --shadow: none;
   --focus-ring: 3px solid #9fd8cc;
@@ -123,7 +123,7 @@ button {
   transform: translateY(-180%);
   padding: 0.8rem 1rem;
   border-radius: 999px;
-  background: var(--primary);
+  background: var(--w-primary);
   color: white;
   font-weight: 700;
   z-index: 100;
@@ -153,7 +153,7 @@ button {
   background: var(--panel);
   border: 2px solid var(--panel-border-strong, var(--panel-border));
   box-shadow: var(--shadow);
-  border-radius: var(--radius-lg);
+  border-radius: var(--w-radius-lg);
   /* Base inner padding so text never touches the rounded border. Variants
      (.topbar, .sidebar, .sos-hero, …) re-declare their own padding later in
      this file, which wins at equal specificity. */
@@ -230,7 +230,7 @@ button {
 
 .brand-block p {
   margin: 2px 0 0;
-  color: var(--muted);
+  color: var(--w-muted);
   font-size: 0.92rem;
 }
 
@@ -268,7 +268,7 @@ button {
   height: 38px;
   display: grid;
   place-items: center;
-  border-radius: var(--radius-sm);
+  border-radius: var(--w-radius-sm);
   background: var(--panel-solid);
   border: 1px solid var(--panel-border);
   font-size: 1.1rem;
@@ -286,7 +286,7 @@ button {
 }
 
 .nav-item small {
-  color: var(--muted);
+  color: var(--w-muted);
   font-size: 0.82rem;
   margin-top: 2px;
 }
@@ -357,7 +357,7 @@ button {
 
 .topbar-kicker {
   margin: 0 0 6px;
-  color: var(--primary);
+  color: var(--w-primary);
   font-size: 0.74rem;
   font-weight: 800;
   letter-spacing: 0.14em;
@@ -427,7 +427,7 @@ button {
 
 .hero-subtitle {
   margin: 10px 0 0;
-  color: var(--muted);
+  color: var(--w-muted);
   font-size: 1rem;
   line-height: 1.65;
 }
@@ -441,7 +441,7 @@ button {
 }
 
 .eyebrow {
-  color: var(--primary);
+  color: var(--w-primary);
   font-weight: 800;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -509,7 +509,7 @@ button {
 .contact-row,
 .sos-safe-card p,
 .tiny-print {
-  color: var(--muted);
+  color: var(--w-muted);
 }
 
 .metric-note,
@@ -668,7 +668,7 @@ button {
 .settings-hint {
   margin: 0 0 4px;
   font-size: 0.82rem;
-  color: var(--muted, #6b7280);
+  color: var(--w-muted, #6b7280);
   max-width: 46ch;
 }
 
@@ -864,7 +864,7 @@ button {
 }
 
 .stat-big span {
-  color: var(--muted);
+  color: var(--w-muted);
   font-size: 0.88rem;
 }
 
@@ -876,7 +876,7 @@ button {
 }
 
 .stat-big small {
-  color: var(--muted);
+  color: var(--w-muted);
 }
 
 .bar-chart {
@@ -895,7 +895,7 @@ button {
 }
 
 .bar-column span {
-  color: var(--muted);
+  color: var(--w-muted);
   font-size: 0.82rem;
 }
 
@@ -915,11 +915,11 @@ button {
 }
 
 .feed-card.tone-danger { border-left: 5px solid var(--danger); }
-.feed-card.tone-warning { border-left: 5px solid var(--warning); }
-.feed-card.tone-success { border-left: 5px solid var(--success); }
+.feed-card.tone-warning { border-left: 5px solid var(--w-warning); }
+.feed-card.tone-success { border-left: 5px solid var(--w-success); }
 
 .feed-footer {
-  color: var(--muted);
+  color: var(--w-muted);
   font-size: 0.88rem;
 }
 
@@ -928,7 +928,7 @@ button {
   border-radius: 999px;
   padding: 8px 12px;
   font-weight: 700;
-  color: var(--primary-strong);
+  color: var(--w-primary-strong);
 }
 
 .form-stack {
@@ -947,7 +947,7 @@ label input,
 label textarea,
 label select {
   width: 100%;
-  border-radius: var(--radius-sm);
+  border-radius: var(--w-radius-sm);
   border: 2px solid var(--panel-border-strong);
   background: var(--panel-solid);
   color: var(--text);
@@ -1004,7 +1004,7 @@ label select {
 }
 
 .toggle-row.on {
-  border-left: 5px solid var(--success);
+  border-left: 5px solid var(--w-success);
 }
 
 .toggle-row.off {
@@ -1013,7 +1013,7 @@ label select {
 
 .toggle-row p {
   margin: 4px 0 0;
-  color: var(--muted);
+  color: var(--w-muted);
 }
 
 .control-inline {
@@ -1231,7 +1231,7 @@ textarea:focus-visible {
 
   .bottom-nav-item.active {
     background: var(--color-lavender-whisper);
-    color: var(--primary-strong);
+    color: var(--w-primary-strong);
   }
 
   /* Full tab names, wrapped to two lines — truncation ("Safe Journ…") is
@@ -1300,7 +1300,7 @@ textarea,
 select {
   font: inherit;
   padding: 12px 14px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--w-radius-sm);
   border: 2px solid var(--panel-border-strong);
   background: var(--panel-solid);
   color: var(--text);
@@ -1327,14 +1327,14 @@ select {
 .coach-status {
   margin: 0 0 12px;
   font-size: 0.92rem;
-  color: var(--primary-strong);
+  color: var(--w-primary-strong);
   font-weight: 600;
 }
 
 .ghost-btn.active {
-  background: var(--primary-soft);
-  border-color: var(--primary);
-  color: var(--primary-strong);
+  background: var(--w-primary-soft);
+  border-color: var(--w-primary);
+  color: var(--w-primary-strong);
 }
 
 .ai-result-panel {
@@ -1353,12 +1353,12 @@ select {
 .ai-result-details {
   margin: 0;
   padding-left: 20px;
-  color: var(--muted);
+  color: var(--w-muted);
 }
 
 .ai-result-warnings p {
   margin: 4px 0;
-  color: var(--warning);
+  color: var(--w-warning);
   font-weight: 500;
 }
 
@@ -1369,11 +1369,11 @@ select {
 }
 
 /* Settings reading history + notes (audit 2026-08-06 additions) */
-.muted-note { color: var(--muted, #6b7280); font-size: 0.9rem; margin: 0.25rem 0; }
+.muted-note { color: var(--w-muted, #6b7280); font-size: 0.9rem; margin: 0.25rem 0; }
 .settings-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
 .settings-list-item { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.5rem 0; border-bottom: 1px solid var(--border, rgba(0,0,0,0.08)); }
 .settings-list-title { margin: 0; font-weight: 600; font-size: 0.9rem; }
-.settings-list-sub { margin: 0.15rem 0 0; font-size: 0.78rem; color: var(--muted, #6b7280); }
+.settings-list-sub { margin: 0.15rem 0 0; font-size: 0.78rem; color: var(--w-muted, #6b7280); }
 .min-w-0 { min-width: 0; }
 /* ============================================================
    Wispr Flow — Watchora landing page
@@ -2307,13 +2307,13 @@ select {
 .primary-card-head { display: flex; gap: 12px; align-items: flex-start; }
 .primary-card-icon { font-size: 28px; line-height: 1; }
 .primary-card h3 { margin: 0; font-family: var(--font-display); font-weight: 600; font-size: 1.3rem; letter-spacing: -0.01em; }
-.primary-card-explanation { margin: 4px 0 0; font-size: 0.9rem; color: var(--muted); }
+.primary-card-explanation { margin: 4px 0 0; font-size: 0.9rem; color: var(--w-muted); }
 .primary-card-state { margin: 0; font-size: 0.85rem; font-weight: 600; }
 .state-ok { color: var(--ok); }
 .state-warn { color: var(--warn); }
 .state-danger { color: var(--danger); }
 .primary-card-button { width: 100%; }
-.voice-hint { margin: 2px 0 0; font-size: 0.8rem; color: var(--muted); }
+.voice-hint { margin: 2px 0 0; font-size: 0.8rem; color: var(--w-muted); }
 
 /* Secondary action cards */
 .secondary-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
@@ -2323,11 +2323,11 @@ select {
   font-size: 0.95rem; font-weight: 600; cursor: pointer; text-align: left;
   transition: transform 140ms ease, border-color 140ms ease, background-color 140ms ease;
 }
-.secondary-card:hover { border-color: var(--panel-border-strong); background: var(--accent); transform: translateY(-1px); }
+.secondary-card:hover { border-color: var(--panel-border-strong); background: var(--w-accent); transform: translateY(-1px); }
 .secondary-card:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
 
 /* Status banners — Wispr tones (lavender info, ember warn, forest ok) */
-.status-banner { border-radius: var(--radius-md); padding: 12px 16px; font-size: 0.95rem; border: 1.5px solid transparent; }
+.status-banner { border-radius: var(--w-radius-md); padding: 12px 16px; font-size: 0.95rem; border: 1.5px solid transparent; }
 .banner-info { background: rgba(240, 215, 255, 0.45); border-color: rgba(26, 26, 26, 0.35); }
 .theme-dark .banner-info { background: rgba(240, 215, 255, 0.12); border-color: rgba(255, 255, 255, 0.3); }
 .banner-warn { background: rgba(255, 169, 70, 0.16); border-color: rgba(166, 106, 18, 0.45); }
@@ -2363,7 +2363,7 @@ select {
 .emergency-control-wrap { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
 .emergency-button {
   display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 64px; padding: 0 24px;
-  border-radius: var(--radius-md); border: 0; background: var(--danger); color: #fff;
+  border-radius: var(--w-radius-md); border: 0; background: var(--danger); color: #fff;
   font-size: 1.05rem; font-weight: 800; letter-spacing: 0.01em; cursor: pointer; width: 100%;
 }
 .emergency-button:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
@@ -2376,13 +2376,13 @@ select {
 .emergency-status-list li { opacity: 0.8; }
 
 /* Permission centre */
-.permission-center { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 20px; max-height: 85vh; overflow-y: auto; }
+.permission-center { background: var(--card); border: 1px solid var(--border); border-radius: var(--w-radius-lg); padding: 20px; max-height: 85vh; overflow-y: auto; }
 .permission-list { list-style: none; margin: 16px 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
-.permission-item { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 14px; }
+.permission-item { border: 1px solid var(--border); border-radius: var(--w-radius-sm); padding: 14px; }
 .permission-item-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
-.permission-explanation { margin: 8px 0 0; font-size: 0.9rem; color: var(--muted); }
+.permission-explanation { margin: 8px 0 0; font-size: 0.9rem; color: var(--w-muted); }
 .permission-detail { margin: 6px 0 0; font-size: 0.85rem; }
-.permission-fallback { margin-top: 12px; padding: 14px; background: var(--lumen-stone, var(--color-lumen-stone)); border: 1px solid var(--panel-border); border-radius: var(--radius-sm); }
+.permission-fallback { margin-top: 12px; padding: 14px; background: var(--lumen-stone, var(--color-lumen-stone)); border: 1px solid var(--panel-border); border-radius: var(--w-radius-sm); }
 .permission-fallback ul { margin: 8px 0 0; padding-left: 20px; font-size: 0.85rem; }
 .modal-scrim { position: fixed; inset: 0; background: rgba(20, 18, 12, 0.55); backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 60; }
 
@@ -2393,7 +2393,7 @@ select {
 
 /* Settings permission group */
 .permission-settings { display: flex; flex-direction: column; gap: 14px; }
-.voice-test { margin-top: 12px; padding: 12px; background: var(--color-lumen-stone); border: 1px solid var(--panel-border); border-radius: var(--radius-sm); }
+.voice-test { margin-top: 12px; padding: 12px; background: var(--color-lumen-stone); border: 1px solid var(--panel-border); border-radius: var(--w-radius-sm); }
 
 /* Respect reduced motion */
 @media (prefers-reduced-motion: reduce) {
@@ -2543,7 +2543,7 @@ select {
   min-height: 48px;
 }
 .settings-hint {
-  color: var(--muted);
+  color: var(--w-muted);
   font-size: 0.9rem;
   margin: 4px 0 0;
 }
@@ -2567,7 +2567,7 @@ select {
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--muted);
+  color: var(--w-muted);
   pointer-events: none;
 }
 
@@ -2576,8 +2576,8 @@ select {
   margin: 0 0 14px;
   padding: 14px 16px;
   border: var(--ink-border);
-  border-radius: var(--radius-md);
-  background: var(--accent);
+  border-radius: var(--w-radius-md);
+  background: var(--w-accent);
 }
 .type-jarvis-label {
   display: block;
@@ -2595,7 +2595,7 @@ select {
   min-width: 0;
   min-height: 48px;
   padding: 0 14px;
-  border-radius: var(--radius-sm);
+  border-radius: var(--w-radius-sm);
   border: 2px solid var(--panel-border-strong);
   background: var(--panel-solid);
   color: var(--text);
