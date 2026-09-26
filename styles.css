@@ -26,6 +26,19 @@
   --w-primary-soft: rgba(240, 215, 255, 0.55);
   --w-accent: #f0d7ff;
   --w-accent-strong: #1a1a1a;
+  /* Selected-nav surface. It needs its own triple because the selection is a
+   * background, and a background token alone cannot keep the label readable:
+   * the label is set in --text, which is cream in dark mode. Cream on the
+   * light lavender measured 1.31:1 — an invisible selected tab. */
+  --w-active-bg: #f0d7ff;
+  --w-active-fg: #1a1a1a;   /* 13.15:1 */
+  --w-active-muted: #4a4739; /* 7.05:1 */
+  /* Raised/selected card surface. Split into two stops because the light theme
+   * uses a gradient; a single colour token would have frozen the light ramp. */
+  --w-raise-top: #e4e4d0;
+  --w-raise-bottom: rgba(255, 255, 255, 0.88);
+  --w-subtle-bg: #e4e4d0;
+  --w-on-danger: #ffffff;  /* 8.23:1 on the light danger fill */
   --w-secondary: #034f46;
   --w-success: #034f46;
   --w-warning: #6d4600;
@@ -66,6 +79,24 @@
   --w-primary-soft: rgba(240, 215, 255, 0.16);
   --w-accent: #4a3263;
   --w-accent-strong: #ffffeb;
+  --w-active-bg: #4a3263;
+  --w-active-fg: #ffffeb;   /* 10.77:1 */
+  --w-active-muted: #dcd2ea; /* 7.50:1 */
+  --w-raise-top: #2e2d25;   /* 13.67:1 with cream */
+  --w-raise-bottom: #3a3830; /* 11.61:1 with cream */
+  /* The ink border is a light-only shorthand, so it stayed black in dark mode.
+   * That is fine on the light-filled legacy buttons but not on .type-jarvis,
+   * which is filled with --w-accent (dark purple) — a black border on dark
+   * purple is an invisible boundary. Flip it to the dark-mode ink. */
+  --ink-border: 2px solid #ffffeb;
+  /* The mobile bottom nav painted light stone while its label inherited
+   * var(--text), which is cream in dark mode: 1.16:1. All five tabs were
+   * invisible on a phone in dark mode. 14.44:1 here. */
+  --w-subtle-bg: #2a2921;
+  /* The danger fill is a light salmon in dark mode, so the SOS/emergency
+   * buttons cannot keep white text: 2.04:1. This is the dark-mode ink for
+   * on-danger surfaces. 9.13:1. */
+  --w-on-danger: #2b0603;
   --w-secondary: #8fe6cd;
   --w-success: #6fe0b6;
   /* --w-warning and --danger had NO dark value and sat at 3.89:1 and 2.34:1 —
@@ -132,8 +163,12 @@ button {
   transform: translateY(-180%);
   padding: 0.8rem 1rem;
   border-radius: 999px;
-  background: var(--w-primary);
-  color: white;
+  /* Was --w-primary + white: in dark mode that is cream on cream at 1.01:1 —
+   * the skip link was the one control a keyboard user could not see. The
+   * panel/text pair reads 17.20:1 light and 15.72:1 dark. */
+  background: var(--panel-solid);
+  color: var(--text);
+  border: 2px solid var(--panel-border-strong);
   font-weight: 700;
   z-index: 100;
   transition: transform 160ms ease;
@@ -267,9 +302,16 @@ button {
 }
 
 .nav-item.active {
-  background: var(--color-lavender-whisper);
-  border-color: var(--color-vast-ink);
+  background: var(--w-active-bg);
+  color: var(--w-active-fg);
+  border-color: var(--panel-border-strong);
   border-width: 2px;
+}
+
+/* The sub-label needs its own colour: --w-muted is tuned for the panel
+ * surface, not for the filled selection behind it. */
+.nav-item.active small {
+  color: var(--w-active-muted);
 }
 
 .nav-icon {
@@ -776,8 +818,8 @@ button {
 }
 
 .route-card.active {
-  border-color: rgba(26, 26, 26, 0.3);
-  background: linear-gradient(180deg, var(--color-lumen-stone), rgba(255, 255, 255, 0.88));
+  border-color: var(--w-primary);
+  background: linear-gradient(180deg, var(--w-raise-top), var(--w-raise-bottom));
 }
 
 .route-meta {
@@ -821,7 +863,7 @@ button {
   padding: 14px 18px;
   border-radius: 18px;
   background: linear-gradient(135deg, var(--danger), #ff735e);
-  color: white;
+  color: var(--w-on-danger);
   font-weight: 800;
   box-shadow: 0 12px 24px rgba(215, 63, 55, 0.2);
 }
@@ -937,7 +979,7 @@ button {
 }
 
 .pill-action {
-  background: var(--color-lumen-stone);
+  background: var(--w-subtle-bg);
   border-radius: 999px;
   padding: 8px 12px;
   font-weight: 700;
@@ -1233,8 +1275,9 @@ textarea:focus-visible {
   .bottom-nav-item {
     padding: 6px 4px;
     border-radius: 14px;
-    background: var(--color-lumen-stone);
+    background: var(--w-subtle-bg);
     color: var(--text);
+    border: 1px solid var(--panel-border);
     display: grid;
     gap: 1px;
     justify-items: center;
@@ -1244,8 +1287,9 @@ textarea:focus-visible {
   }
 
   .bottom-nav-item.active {
-    background: var(--color-lavender-whisper);
-    color: var(--w-primary-strong);
+    background: var(--w-active-bg);
+    color: var(--w-active-fg);
+    border-color: var(--panel-border-strong);
   }
 
   /* Full tab names, wrapped to two lines — truncation ("Safe Journ…") is
@@ -2377,13 +2421,13 @@ select {
 .emergency-control-wrap { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
 .emergency-button {
   display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 64px; padding: 0 24px;
-  border-radius: var(--w-radius-md); border: 0; background: var(--danger); color: #fff;
+  border-radius: var(--w-radius-md); border: 0; background: var(--danger); color: var(--w-on-danger);
   font-size: 1.05rem; font-weight: 800; letter-spacing: 0.01em; cursor: pointer; width: 100%;
 }
 .emergency-button:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
 .emergency-button-icon { font-size: 26px; }
 .emergency-confirm { background: rgba(220,38,38,0.1); border: 2px solid var(--danger, #dc2626); border-radius: 14px; padding: 16px; margin-bottom: 10px; width: 100%; }
-.emergency-active { background: var(--danger, #dc2626); color: #fff; border-radius: 18px; padding: 20px; }
+.emergency-active { background: var(--danger, #dc2626); color: var(--w-on-danger); border-radius: 18px; padding: 20px; }
 .emergency-active h2 { margin: 0 0 12px; }
 .emergency-status-list { list-style: none; margin: 0 0 16px; padding: 0; display: flex; flex-direction: column; gap: 8px; font-size: 1rem; }
 .emergency-status-list .done { opacity: 1; }
@@ -2416,14 +2460,14 @@ select {
 
 /* ── MapView (MapLibre + OpenFreeMap) ───────────────────────────────
    Wispr Flow themed markers. The trail line color is driven by the
-   MapView component using the app's --accent-lavender token; the pulsing
+   MapView component using the app's --w-accent token; the pulsing
    marker below matches the lavender CTA language. */
 .mapview-marker .marker-core {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: var(--accent-lavender, #f0d7ff);
-  border: 2px solid var(--ink, #1a1a1a);
+  background: var(--w-accent);
+  border: 2px solid var(--panel-border-strong);
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9);
   position: absolute;
   top: 50%;
@@ -2437,7 +2481,7 @@ select {
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  border: 2px solid var(--accent-lavender, #f0d7ff);
+  border: 2px solid var(--w-accent);
   transform: translate(-50%, -50%);
   animation: marker-pulse 1.8s ease-out infinite;
   opacity: 0;
@@ -2453,7 +2497,7 @@ select {
 }
 .maplibregl-ctrl-group button {
   background: #fff;
-  border: 1px solid var(--ink, #1a1a1a);
+  border: 1px solid var(--panel-border-strong);
   border-radius: 8px;
 }
 
@@ -2471,8 +2515,8 @@ select {
   width: 16px;
   height: 16px;
   border-radius: 50% 50% 50% 0;
-  background: var(--accent-lavender, #f0d7ff);
-  border: 2px solid var(--ink, #1a1a1a);
+  background: var(--w-accent);
+  border: 2px solid var(--panel-border-strong);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
   rotate: -45deg;
 }
@@ -2486,13 +2530,15 @@ select {
   overflow: hidden;
   text-overflow: ellipsis;
   background: rgba(255, 255, 255, 0.95);
-  color: var(--ink, #1a1a1a);
+  /* Constant ink, not a theme token: this label sits on the map raster, which
+   * is light in both themes. A flipping token made it cream-on-white in dark. */
+  color: var(--color-vast-ink);
   font-size: 0.875rem;
   font-weight: 600;
   line-height: 1.4;
   padding: 2px 7px;
   border-radius: 8px;
-  border: 1px solid var(--ink, #1a1a1a);
+  border: 1px solid var(--color-vast-ink);
   pointer-events: none;
 }
 

@@ -54,6 +54,32 @@ Rules that are now invariants, not conventions:
 5. **Structural borders are ≥ 3:1** (SC 1.4.11). The legacy panel border was
    `rgba(26,26,26,0.3)` = 1.94:1 — invisible, and it was the entire basis of the
    "ink border" look. Alpha is now 0.55 light / 0.45 dark (3.88:1 / 4.52:1).
+6. **A background needs its own foreground token.** This is the rule the whole
+   dark-mode audit turned up. `--text` flips to cream in dark mode, so *any*
+   element that paints a background it did not tokenise inherits cream text onto
+   a light fill. Nine separate components did exactly this, and each one was a
+   control the user could not read:
+
+   | Element | Was | Measured | Now |
+   |---|---|---|---|
+   | `.nav-item.active` (selected tab) | `#f0d7ff` bg + `--text` | 1.31:1 | `--w-active-bg/-fg/-muted` — 10.77:1 |
+   | `.bottom-nav-item` (all 5 mobile tabs) | `#e4e4d0` bg + `--text` | 1.16:1 | `--w-subtle-bg` — 14.44:1 |
+   | `.skip-link` | `--w-primary` bg + `white` | 1.01:1 | `--panel-solid` + `--text` — 15.72:1 |
+   | `.sos-button`, `.emergency-button`, `.emergency-active` | `var(--danger)` + `#fff` | 2.04:1 | `--w-on-danger` — 9.13:1 |
+   | `.pill-action` | `#e4e4d0` bg + `--w-primary-strong` | 1.27:1 | `--w-subtle-bg` — 14.44:1 |
+   | `.route-card.active` | stone→white gradient | invisible | `--w-raise-top/-bottom` — 11.61:1 |
+   | `--ink-border` | black in both themes | invisible on dark fills | flips to `#ffffeb` |
+
+   Two traps worth naming. `--accent-lavender` and `--ink` were **not defined
+   anywhere**, so every `var(--accent-lavender, #f0d7ff)` silently ran on its
+   fallback and was frozen at the light value in both themes — no error, no
+   warning. And the inverse trap applies to surfaces drawn over a *map raster*:
+   `.place-label` sits on light map tiles in both themes, so it must use constant
+   ink, never a flipping token.
+
+7. **Selection state is a surface, not a tint.** An active tab is a background
+   with text on it, so it gets its own `--w-active-bg/-fg/-muted` triple rather
+   than borrowing `--w-accent` and `--text` independently.
 
 ## 2. Type
 
