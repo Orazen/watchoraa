@@ -76,6 +76,47 @@ const tabs: Array<{ key: TabKey; label: string; icon: LucideIcon; note: string }
   { key: 'admin', label: 'Admin', icon: Wrench, note: 'Operations' },
 ];
 
+/** Width (px) at which the shell swaps the sidebar for the fixed bottom bar.
+ *  Must stay identical to the `max-width: 720px` breakpoint in styles.css:
+ *  `.sidebar { display: none }` and `.bottom-nav { display: block }` are both
+ *  declared inside that one media query (styles.css:1193 and styles.css:1207),
+ *  so at every viewport exactly one of the two nav surfaces is rendered. */
+const COMPACT_NAV_MEDIA = '(max-width: 720px)';
+
+/** True when the bottom bar is the visible navigation surface.
+ *
+ *  The nine tabs are rendered twice — once in `.sidebar`, once in `.bottom-nav`
+ *  — because the responsive layout needs both. `display: none` already takes the
+ *  inactive one out of the accessibility tree and out of the tab order, so the
+ *  *rendered* duplication is handled by CSS alone; a
+ *  `document.querySelectorAll('[role="tablist"]').length === 2` count measures
+ *  DOM nodes, not accessibility-tree nodes, and so does not show a
+ *  duplication a screen reader would ever walk.
+ *
+ *  This hook states the same invariant in React anyway. The app is a PWA whose
+ *  service worker precaches the hashed Vite bundle (public/sw.js), so a deploy
+ *  can briefly serve a new JS bundle against a stale stylesheet; when that
+ *  happens `display: none` stops doing its job and all eighteen tabs become
+ *  reachable. `aria-hidden` here makes that failure mode impossible rather than
+ *  merely unlikely. matchMedia is used rather than a resize listener because the
+ *  breakpoint is a media query, so this is the same signal with no layout
+ *  thrash. */
+function useCompactNav(): boolean {
+  const [compact, setCompact] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia(COMPACT_NAV_MEDIA).matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(COMPACT_NAV_MEDIA);
+    const onChange = (event: MediaQueryListEvent) => setCompact(event.matches);
+    // Re-sync on mount: the initial state was read during the first render,
+    // which on a slow first paint can predate a real layout.
+    setCompact(mq.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  return compact;
+}
+
 type AnalysisMode = 'navigation' | 'assistant' | 'reading' | 'environment';
 
 type AiResult = {
@@ -1595,6 +1636,27 @@ function MainApp({
       ? tabs
       : tabs.filter((tab) => tab.key !== 'admin' && (user.role === 'CAREGIVER' || tab.key !== 'caregiver'));
 
+  // Only the nav surface for the current viewport may be in the accessibility
+  // tree. Which one that is mirrors the CSS breakpoint exactly (COMPACT_NAV_MEDIA).
+  const compactNav = useCompactNav();
+
+  // Crossing the breakpoint while focus sits inside a nav surface would
+  // otherwise leave `document.activeElement` inside a container that is now
+  // display:none (and aria-hidden), which is an ARIA violation and strands a
+  // keyboard or switch-control user with no announced position. Only the
+  // surface for the current viewport is rendered, so focus has no business
+  // being in either one after a breakpoint change. `<main>` is already
+  // focusable (tabIndex={-1}) and holds the panel that tab selected, so moving
+  // focus there leaves the user on the screen they were reading. Checked in
+  // both directions: the surface being revealed is just as display:none as the
+  // one being hidden.
+  useEffect(() => {
+    const active = document.activeElement as HTMLElement | null;
+    if (!active || active === document.body) return;
+    if (!active.closest('.sidebar') && !active.closest('.bottom-nav')) return;
+    document.getElementById('main-content')?.focus();
+  }, [compactNav]);
+
   const renderTracking = () => (
     <div className="screen-grid tracking-grid">
       <section className="hero-panel panel">
@@ -1850,7 +1912,14 @@ function MainApp({
         {statusMessage}
       </div>
       <div className={`app-shell ${selectedThemeClass}`}>
-        <aside className="sidebar panel" aria-label="Primary navigation">
+        {/* `aria-hidden` mirrors the stylesheet's `display: none` at the 720px
+            breakpoint (styles.css:1193). It is redundant while the CSS loads,
+            and load-bearing if it does not — see useCompactNav. */}
+        <aside
+          className="sidebar panel"
+          aria-label="Primary navigation"
+          aria-hidden={compactNav || undefined}
+        >
           <div className="brand-block">
             <div className="brand-mark" aria-hidden="true">W</div>
             <div>
@@ -1864,9 +1933,11 @@ function MainApp({
             </div>
           </div>
           {/* nav keeps its navigation landmark role; the tablist semantics
-              live on an inner div so the region is still a landmark. */}
+              live on an inner div so the region is still a landmark. The
+              tablist is named so it is announced as "Dashboard sections, tab
+              list" rather than an anonymous tab list. */}
           <nav className="sidebar-nav" aria-label="Dashboard sections">
-            <div role="tablist">
+            <div role="tablist" aria-label="Dashboard sections">
               {visibleTabs.map((tab) => (
                 <button
                   key={tab.key}
@@ -2073,8 +2144,15 @@ function MainApp({
           </main>
         </div>
 
-        <nav className="bottom-nav panel" aria-label="Mobile navigation">
-          <div role="tablist" className="bottom-nav-tablist">
+        {/* The mirror image of the sidebar: visible only below 720px
+            (styles.css:1207), and aria-hidden above it so exactly one of the
+            two nav surfaces is ever in the accessibility tree. */}
+        <nav
+          className="bottom-nav panel"
+          aria-label="Mobile navigation"
+          aria-hidden={!compactNav || undefined}
+        >
+          <div role="tablist" className="bottom-nav-tablist" aria-label="Dashboard sections">
             {visibleTabs.map((tab) => (
               <button
                 key={tab.key}

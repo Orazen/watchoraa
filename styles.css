@@ -15,10 +15,12 @@
   --bg-alt: #ffffeb;
   --panel: #ffffeb;
   --panel-solid: #ffffeb;
-  --panel-border: rgba(26, 26, 26, 0.3);
+  /* Structural borders carry the whole "ink border" look, so they must clear
+   * 3:1 (SC 1.4.11). 0.3 alpha measured 1.94:1 — invisible. Now 0.55 = 3.88:1. */
+  --panel-border: rgba(26, 26, 26, 0.55);
   --panel-border-strong: #1a1a1a;
   --text: #1a1a1a;
-  --w-muted: #6b6b60;
+  --w-muted: #4a4739;
   --w-primary: #1a1a1a;
   --w-primary-strong: #1a1a1a;
   --w-primary-soft: rgba(240, 215, 255, 0.55);
@@ -26,9 +28,9 @@
   --w-accent-strong: #1a1a1a;
   --w-secondary: #034f46;
   --w-success: #034f46;
-  --w-warning: #a66a12;
-  --danger: #a3241f;
-  --danger-soft: rgba(163, 36, 31, 0.12);
+  --w-warning: #6d4600;
+  --danger: #9a1c14;
+  --danger-soft: rgba(154, 28, 20, 0.14);
   --shadow: none;
   --w-radius-xl: 40px;
   --w-radius-lg: 32px;
@@ -39,11 +41,14 @@
   --font-ui: 'Figtree', system-ui, -apple-system, sans-serif;
   --font-display: 'EB Garamond', Georgia, serif;
   --focus-ring: 3px solid #034f46;
-  /* Aliases for the v0.x voice-dashboard components (dark equivalents in .theme-dark) */
-  --card: #ffffff;
-  --border: rgba(26, 26, 26, 0.45);
-  --ok: #034f46;
-  --warn: #a66a12;
+  /* NOTE: --card / --border used to be aliased here, which silently overrode the
+   * kit's own values in src/theme.css (same names, later in source order). They
+   * are namespaced below as --w-card / --w-border; the standard names belong to
+   * the kit. See DESIGN.md rule 3. */
+  --w-card: #ffffff;
+  --w-border: rgba(26, 26, 26, 0.55);
+  --ok: #025c42;
+  --warn: #6d4600;
 }
 
 .theme-dark {
@@ -52,24 +57,28 @@
   --bg-alt: #222222;
   --panel: #222222;
   --panel-solid: #222222;
-  --panel-border: rgba(255, 255, 255, 0.24);
+  --panel-border: rgba(255, 255, 255, 0.45);
   --panel-border-strong: #ffffeb;
   --text: #ffffeb;
-  --w-muted: #b8b8a8;
+  --w-muted: #c2beab;
   --w-primary: #ffffeb;
   --w-primary-strong: #ffffeb;
   --w-primary-soft: rgba(240, 215, 255, 0.16);
-  --w-accent: #f0d7ff;
-  --w-accent-strong: #1a1a1a;
-  --w-secondary: #3ea391;
-  --w-success: #3ea391;
-  --danger-soft: rgba(255, 138, 128, 0.16);
+  --w-accent: #4a3263;
+  --w-accent-strong: #ffffeb;
+  --w-secondary: #8fe6cd;
+  --w-success: #6fe0b6;
+  /* --w-warning and --danger had NO dark value and sat at 3.89:1 and 2.34:1 —
+   * an amber caution and a red alarm that nobody could see. See DESIGN.md rule 4. */
+  --w-warning: #ffd489;
+  --danger: #ff9b8c;
+  --danger-soft: rgba(255, 155, 140, 0.16);
   --shadow: none;
-  --focus-ring: 3px solid #9fd8cc;
-  --card: #222222;
-  --border: rgba(255, 255, 255, 0.32);
-  --ok: #3ea391;
-  --warn: #ffc98a;
+  --focus-ring: 3px solid #8fe6cd;
+  --w-card: #201f19;
+  --w-border: rgba(255, 255, 255, 0.45);
+  --ok: #6fe0b6;
+  --warn: #ffd489;
 }
 
 * {
@@ -231,7 +240,7 @@ button {
 .brand-block p {
   margin: 2px 0 0;
   color: var(--w-muted);
-  font-size: 0.92rem;
+  font-size: 1rem;
 }
 
 .sidebar-nav {
@@ -264,8 +273,8 @@ button {
 }
 
 .nav-icon {
-  width: 38px;
-  height: 38px;
+  width: 44px;
+  height: 44px;
   display: grid;
   place-items: center;
   border-radius: var(--w-radius-sm);
@@ -281,13 +290,13 @@ button {
 }
 
 .nav-item strong {
-  font-size: 0.98rem;
+  font-size: 1rem;
   line-height: 1.2;
 }
 
 .nav-item small {
   color: var(--w-muted);
-  font-size: 0.82rem;
+  font-size: 0.875rem;
   margin-top: 2px;
 }
 
@@ -303,6 +312,7 @@ button {
   font-weight: 700;
   background: var(--color-lumen-stone);
   border: 2px solid var(--color-vast-ink);
+  min-height: 44px;
 }
 
 .status-chip.busy {
@@ -358,7 +368,7 @@ button {
 .topbar-kicker {
   margin: 0 0 6px;
   color: var(--w-primary);
-  font-size: 0.74rem;
+  font-size: 0.875rem;
   font-weight: 800;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -445,7 +455,7 @@ button {
   font-weight: 800;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  font-size: 0.72rem;
+  font-size: 0.875rem;
 }
 
 .pill {
@@ -454,8 +464,9 @@ button {
   justify-content: center;
   padding: 7px 10px;
   border-radius: 999px;
-  font-size: 0.76rem;
+  font-size: 0.875rem;
   font-weight: 800;
+  min-height: 44px;
 }
 
 .pill-success {
@@ -516,7 +527,7 @@ button {
 .summary-card li,
 .feed-card p,
 .sos-safe-card p {
-  font-size: 0.92rem;
+  font-size: 1rem;
   line-height: 1.55;
 }
 
@@ -549,8 +560,9 @@ button {
   border-radius: 999px;
   background: var(--color-forest-ink);
   color: var(--color-lumen-cream);
-  font-size: 0.72rem;
+  font-size: 0.875rem;
   font-weight: 800;
+  min-height: 44px;
 }
 
 .video-frame {
@@ -599,7 +611,8 @@ button {
   background: var(--color-vast-ink);
   color: white;
   font-weight: 800;
-  font-size: 0.76rem;
+  font-size: 0.875rem;
+  min-height: 44px;
 }
 
 .hazard-box {
@@ -618,7 +631,7 @@ button {
   border-radius: 6px 6px 6px 0;
   background: rgba(15, 42, 74, 0.85);
   color: white;
-  font-size: 0.68rem;
+  font-size: 0.875rem;
   font-weight: 700;
   white-space: nowrap;
 }
@@ -630,7 +643,7 @@ button {
   padding: 10px 14px;
   border-radius: 14px;
   background: rgba(15, 42, 74, 0.06);
-  font-size: 0.86rem;
+  font-size: 0.875rem;
   font-weight: 600;
 }
 
@@ -658,7 +671,7 @@ button {
   font-variant-numeric: tabular-nums;
   opacity: 0.65;
   font-weight: 500;
-  font-size: 0.76rem;
+  font-size: 0.875rem;
 }
 
 .hazard-toggle {
@@ -667,7 +680,7 @@ button {
 
 .settings-hint {
   margin: 0 0 4px;
-  font-size: 0.82rem;
+  font-size: 0.875rem;
   color: var(--w-muted, #6b7280);
   max-width: 46ch;
 }
@@ -769,7 +782,7 @@ button {
 
 .route-meta {
   margin-top: 4px;
-  font-size: 0.9rem;
+  font-size: 1rem;
 }
 
 .detail-card strong,
@@ -784,14 +797,14 @@ button {
 
 .route-distance {
   margin-top: 4px;
-  font-size: 0.86rem;
+  font-size: 0.875rem;
   font-weight: 700;
   color: var(--color-forest-ink);
 }
 
 .route-meta-muted {
   opacity: 0.55;
-  font-size: 0.78rem;
+  font-size: 0.875rem;
 }
 
 .detail-card p,
@@ -865,7 +878,7 @@ button {
 
 .stat-big span {
   color: var(--w-muted);
-  font-size: 0.88rem;
+  font-size: 0.875rem;
 }
 
 .stat-big strong {
@@ -896,7 +909,7 @@ button {
 
 .bar-column span {
   color: var(--w-muted);
-  font-size: 0.82rem;
+  font-size: 0.875rem;
 }
 
 .bar {
@@ -920,7 +933,7 @@ button {
 
 .feed-footer {
   color: var(--w-muted);
-  font-size: 0.88rem;
+  font-size: 0.875rem;
 }
 
 .pill-action {
@@ -929,6 +942,7 @@ button {
   padding: 8px 12px;
   font-weight: 700;
   color: var(--w-primary-strong);
+  min-height: 44px;
 }
 
 .form-stack {
@@ -1084,7 +1098,7 @@ textarea:focus-visible {
 }
 
 .tiny-print {
-  font-size: 0.88rem;
+  font-size: 0.875rem;
   line-height: 1.55;
 }
 
@@ -1237,7 +1251,7 @@ textarea:focus-visible {
   /* Full tab names, wrapped to two lines — truncation ("Safe Journ…") is
      useless to a screen-reader or low-vision user scanning the nav. */
   .bottom-nav-item strong {
-    font-size: 0.62rem;
+    font-size: 0.875rem;
     line-height: 1.15;
     max-width: 100%;
     display: -webkit-box;
@@ -1326,7 +1340,7 @@ select {
 
 .coach-status {
   margin: 0 0 12px;
-  font-size: 0.92rem;
+  font-size: 1rem;
   color: var(--w-primary-strong);
   font-weight: 600;
 }
@@ -1369,11 +1383,11 @@ select {
 }
 
 /* Settings reading history + notes (audit 2026-08-06 additions) */
-.muted-note { color: var(--w-muted, #6b7280); font-size: 0.9rem; margin: 0.25rem 0; }
+.muted-note { color: var(--w-muted, #6b7280); font-size: 1rem; margin: 0.25rem 0; }
 .settings-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
 .settings-list-item { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; padding: 0.5rem 0; border-bottom: 1px solid var(--border, rgba(0,0,0,0.08)); }
-.settings-list-title { margin: 0; font-weight: 600; font-size: 0.9rem; }
-.settings-list-sub { margin: 0.15rem 0 0; font-size: 0.78rem; color: var(--w-muted, #6b7280); }
+.settings-list-title { margin: 0; font-weight: 600; font-size: 1rem; }
+.settings-list-sub { margin: 0.15rem 0 0; font-size: 0.875rem; color: var(--w-muted, #6b7280); }
 .min-w-0 { min-width: 0; }
 /* ============================================================
    Wispr Flow — Watchora landing page
@@ -1402,7 +1416,7 @@ select {
   min-height: 100vh;
   position: relative;
   overflow-x: hidden;
-  font-size: 16px;
+  font-size: 1rem;
   line-height: 1.3;
 }
 
@@ -1569,7 +1583,7 @@ select {
   padding: 10px 16px;
   border-radius: 9999px;
   color: var(--color-vast-ink);
-  font-size: 15px;
+  font-size: 1rem;
   font-weight: 500;
   text-decoration: none;
   transition: background 160ms ease;
@@ -1591,7 +1605,7 @@ select {
   background: none;
   border: none;
   padding: 10px 14px;
-  font-size: 15px;
+  font-size: 1rem;
   font-weight: 500;
   color: var(--color-charcoal);
   cursor: pointer;
@@ -1614,7 +1628,7 @@ select {
   border-radius: 12px;
   padding: 14px 24px;
   font-family: var(--font-figtree);
-  font-size: 16px;
+  font-size: 1rem;
   font-weight: 500;
   cursor: pointer;
   transition: transform 140ms ease, background 140ms ease;
@@ -1637,7 +1651,7 @@ select {
 .wispr-cta-nav {
   padding: 10px 18px;
   border-radius: 9999px;
-  font-size: 15px;
+  font-size: 1rem;
 }
 
 .wispr-cta-block {
@@ -1655,7 +1669,7 @@ select {
   border-radius: 12px;
   padding: 14px 24px;
   font-family: var(--font-figtree);
-  font-size: 16px;
+  font-size: 1rem;
   font-weight: 500;
   cursor: pointer;
   transition: background 140ms ease;
@@ -1678,7 +1692,7 @@ select {
   padding: 8px 16px;
   border-radius: 9999px;
   font-family: var(--font-figtree);
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 500;
   border: 2px solid transparent;
 }
@@ -1716,7 +1730,7 @@ select {
   border-radius: 9999px;
   color: var(--color-lumen-cream);
   font-family: var(--font-figtree);
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 500;
   white-space: nowrap;
 }
@@ -1775,7 +1789,7 @@ select {
 }
 
 .wispr-hero-meta-text {
-  font-size: 15px;
+  font-size: 1rem;
   /* #5c5c52 on cream #ffffeb = ~6.6:1 (WCAG AA). --color-fog (#8a8a80,
      ~3.4:1) fails AA on the cream hero; dark chambers keep the token. */
   color: #5c5c52;
@@ -1891,7 +1905,7 @@ select {
   color: var(--color-lumen-cream);
   border-radius: 9999px;
   font-family: var(--font-figtree);
-  font-size: 13px;
+  font-size: 0.875rem;
   font-weight: 600;
 }
 
@@ -1903,7 +1917,7 @@ select {
 
 .wispr-dark-card-body {
   margin: 0;
-  font-size: 16px;
+  font-size: 1rem;
   line-height: 1.5;
   color: #c9c9bd;
 }
@@ -1931,7 +1945,7 @@ select {
   border-radius: 18px;
   padding: 12px 16px;
   max-width: 84%;
-  font-size: 15px;
+  font-size: 1rem;
   line-height: 1.4;
   border: 2px solid var(--color-vast-ink);
 }
@@ -1993,7 +2007,7 @@ select {
 
 .wispr-compare-label {
   margin: 0;
-  font-size: 15px;
+  font-size: 1rem;
   font-weight: 600;
   color: var(--color-fog);
 }
@@ -2017,7 +2031,7 @@ select {
 
 .wispr-compare-copy {
   margin: 0;
-  font-size: 16px;
+  font-size: 1rem;
   line-height: 1.5;
   color: #c9c9bd;
 }
@@ -2045,7 +2059,7 @@ select {
 
 .wispr-principle-num {
   font-family: var(--font-figtree);
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 600;
   color: var(--color-lavender-whisper);
   letter-spacing: 0.1em;
@@ -2059,7 +2073,7 @@ select {
 
 .wispr-principle-body {
   margin: 0;
-  font-size: 15px;
+  font-size: 1rem;
   line-height: 1.5;
   color: #c9c9bd;
 }
@@ -2100,7 +2114,7 @@ select {
   display: flex;
   align-items: flex-start;
   gap: 12px;
-  font-size: 16px;
+  font-size: 1rem;
   color: var(--color-charcoal);
 }
 
@@ -2129,7 +2143,7 @@ select {
 
 .wispr-cta-label {
   display: block;
-  font-size: 14px;
+  font-size: 0.875rem;
   color: var(--color-fog);
 }
 
@@ -2143,7 +2157,7 @@ select {
 
 .wispr-cta-note {
   margin: 4px 0 0;
-  font-size: 13px;
+  font-size: 0.875rem;
   line-height: 1.5;
   color: var(--color-fog);
   text-align: center;
@@ -2182,7 +2196,7 @@ select {
 .wispr-footer-links button {
   color: #c9c9bd;
   text-decoration: none;
-  font-size: 15px;
+  font-size: 1rem;
   background: none;
   border: none;
   cursor: pointer;
@@ -2202,7 +2216,7 @@ select {
   align-items: center;
   justify-content: space-between;
   padding-top: 32px;
-  font-size: 14px;
+  font-size: 0.875rem;
   color: var(--color-fog);
 }
 
@@ -2212,7 +2226,7 @@ select {
   border: 1px solid var(--color-pure-white);
   border-radius: 9999px;
   color: var(--color-lumen-cream);
-  font-size: 13px;
+  font-size: 0.875rem;
   font-weight: 500;
 }
 
@@ -2259,7 +2273,7 @@ select {
   }
 
   .wispr-lede {
-    font-size: 17px;
+    font-size: 1rem;
   }
 
   .wispr-dark-card {
@@ -2293,41 +2307,41 @@ select {
    it never collides with the command bar / cards that follow */
 .dashboard-head .control-inline { padding-bottom: 2rem; margin-bottom: -1rem; }
 .status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; }
-.status-card { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 16px; }
+.status-card { background: var(--w-card); border: 1px solid var(--w-border); border-radius: 16px; padding: 16px; }
 .status-card-head { display: flex; gap: 12px; align-items: flex-start; }
 .status-icon { font-size: 26px; line-height: 1; }
-.status-line { margin: 4px 0 0; font-size: 0.95rem; }
+.status-line { margin: 4px 0 0; font-size: 1rem; }
 .permission-mini-list { list-style: none; margin: 12px 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-.permission-mini { display: flex; justify-content: space-between; gap: 8px; font-size: 0.85rem; }
+.permission-mini { display: flex; justify-content: space-between; gap: 8px; font-size: 0.875rem; }
 .permission-mini strong { font-weight: 600; }
 
 /* Primary action cards */
 .primary-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
-.primary-card { background: var(--card); border: 1px solid var(--border); border-radius: 18px; padding: 18px; display: flex; flex-direction: column; gap: 10px; }
+.primary-card { background: var(--w-card); border: 1px solid var(--w-border); border-radius: 18px; padding: 18px; display: flex; flex-direction: column; gap: 10px; }
 .primary-card-head { display: flex; gap: 12px; align-items: flex-start; }
 .primary-card-icon { font-size: 28px; line-height: 1; }
 .primary-card h3 { margin: 0; font-family: var(--font-display); font-weight: 600; font-size: 1.3rem; letter-spacing: -0.01em; }
-.primary-card-explanation { margin: 4px 0 0; font-size: 0.9rem; color: var(--w-muted); }
-.primary-card-state { margin: 0; font-size: 0.85rem; font-weight: 600; }
+.primary-card-explanation { margin: 4px 0 0; font-size: 1rem; color: var(--w-muted); }
+.primary-card-state { margin: 0; font-size: 0.875rem; font-weight: 600; }
 .state-ok { color: var(--ok); }
 .state-warn { color: var(--warn); }
 .state-danger { color: var(--danger); }
 .primary-card-button { width: 100%; }
-.voice-hint { margin: 2px 0 0; font-size: 0.8rem; color: var(--w-muted); }
+.voice-hint { margin: 2px 0 0; font-size: 0.875rem; color: var(--w-muted); }
 
 /* Secondary action cards */
 .secondary-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
 .secondary-card {
   display: flex; align-items: center; gap: 10px; min-height: 56px; padding: 12px 14px;
-  background: var(--card); border: 1px solid var(--border); border-radius: 14px;
-  font-size: 0.95rem; font-weight: 600; cursor: pointer; text-align: left;
+  background: var(--w-card); border: 1px solid var(--w-border); border-radius: 14px;
+  font-size: 1rem; font-weight: 600; cursor: pointer; text-align: left;
   transition: transform 140ms ease, border-color 140ms ease, background-color 140ms ease;
 }
 .secondary-card:hover { border-color: var(--panel-border-strong); background: var(--w-accent); transform: translateY(-1px); }
 .secondary-card:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
 
 /* Status banners — Wispr tones (lavender info, ember warn, forest ok) */
-.status-banner { border-radius: var(--w-radius-md); padding: 12px 16px; font-size: 0.95rem; border: 1.5px solid transparent; }
+.status-banner { border-radius: var(--w-radius-md); padding: 12px 16px; font-size: 1rem; border: 1.5px solid transparent; }
 .banner-info { background: rgba(240, 215, 255, 0.45); border-color: rgba(26, 26, 26, 0.35); }
 .theme-dark .banner-info { background: rgba(240, 215, 255, 0.12); border-color: rgba(255, 255, 255, 0.3); }
 .banner-warn { background: rgba(255, 169, 70, 0.16); border-color: rgba(166, 106, 18, 0.45); }
@@ -2339,7 +2353,7 @@ select {
 .voice-control-button {
   display: inline-flex; align-items: center; gap: 8px; min-height: 56px; padding: 0 18px;
   border-radius: 9999px; border: var(--ink-border);
-  background: var(--card); color: var(--text); font-size: 0.95rem; font-weight: 700;
+  background: var(--w-card); color: var(--text); font-size: 1rem; font-weight: 700;
   cursor: pointer;
 }
 .voice-control-button:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
@@ -2376,14 +2390,14 @@ select {
 .emergency-status-list li { opacity: 0.8; }
 
 /* Permission centre */
-.permission-center { background: var(--card); border: 1px solid var(--border); border-radius: var(--w-radius-lg); padding: 20px; max-height: 85vh; overflow-y: auto; }
+.permission-center { background: var(--w-card); border: 1px solid var(--w-border); border-radius: var(--w-radius-lg); padding: 20px; max-height: 85vh; overflow-y: auto; }
 .permission-list { list-style: none; margin: 16px 0; padding: 0; display: flex; flex-direction: column; gap: 14px; }
-.permission-item { border: 1px solid var(--border); border-radius: var(--w-radius-sm); padding: 14px; }
+.permission-item { border: 1px solid var(--w-border); border-radius: var(--w-radius-sm); padding: 14px; }
 .permission-item-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
-.permission-explanation { margin: 8px 0 0; font-size: 0.9rem; color: var(--w-muted); }
-.permission-detail { margin: 6px 0 0; font-size: 0.85rem; }
+.permission-explanation { margin: 8px 0 0; font-size: 1rem; color: var(--w-muted); }
+.permission-detail { margin: 6px 0 0; font-size: 0.875rem; }
 .permission-fallback { margin-top: 12px; padding: 14px; background: var(--lumen-stone, var(--color-lumen-stone)); border: 1px solid var(--panel-border); border-radius: var(--w-radius-sm); }
-.permission-fallback ul { margin: 8px 0 0; padding-left: 20px; font-size: 0.85rem; }
+.permission-fallback ul { margin: 8px 0 0; padding-left: 20px; font-size: 0.875rem; }
 .modal-scrim { position: fixed; inset: 0; background: rgba(20, 18, 12, 0.55); backdrop-filter: blur(3px); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 60; }
 
 /* Onboarding */
@@ -2473,7 +2487,7 @@ select {
   text-overflow: ellipsis;
   background: rgba(255, 255, 255, 0.95);
   color: var(--ink, #1a1a1a);
-  font-size: 11px;
+  font-size: 0.875rem;
   font-weight: 600;
   line-height: 1.4;
   padding: 2px 7px;
@@ -2544,7 +2558,7 @@ select {
 }
 .settings-hint {
   color: var(--w-muted);
-  font-size: 0.9rem;
+  font-size: 1rem;
   margin: 4px 0 0;
 }
 
@@ -2563,7 +2577,7 @@ select {
   inset: auto 0 -1.7rem 0;
   text-align: center;
   font-family: var(--font-ui);
-  font-size: 0.72rem;
+  font-size: 0.875rem;
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -2581,7 +2595,7 @@ select {
 }
 .type-jarvis-label {
   display: block;
-  font-size: 0.85rem;
+  font-size: 0.875rem;
   font-weight: 700;
   color: var(--text);
   margin-bottom: 8px;

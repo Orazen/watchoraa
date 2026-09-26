@@ -365,7 +365,7 @@ export function SettingsTab({
                     <p className="truncate text-sm font-semibold text-foreground">{entry.source}</p>
                     <p className="text-xs text-muted-foreground">{new Date(entry.createdAt).toLocaleString()}</p>
                   </div>
-                  <Button variant="outline" size="sm" onClick={() => onDeleteReading(entry.id)} aria-label="Delete reading entry">
+                  <Button variant="outline" size="md" onClick={() => onDeleteReading(entry.id)} aria-label="Delete reading entry">
                     Delete
                   </Button>
                 </li>

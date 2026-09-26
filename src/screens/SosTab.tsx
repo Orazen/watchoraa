@@ -333,7 +333,7 @@ export function SosTab({
             disabled={sending || countdown != null}
             className="h-20 w-full gap-3 text-2xl font-bold sm:h-24 sm:gap-4 sm:text-3xl"
           >
-            <Siren aria-hidden="true" className="h-9 w-9 sm:h-11 sm:w-11" />
+            <Siren aria-hidden="true" className="h-11 w-11" />
             {sending ? 'Sending…' : 'Send SOS'}
           </Button>
           <p className="text-center text-xs leading-relaxed text-muted-foreground">

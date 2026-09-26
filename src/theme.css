@@ -1,6 +1,11 @@
 /* Watchora design tokens — reUI/shadcn token architecture over the Watchora
  * identity (cream canvas, ink borders, forest primary, lavender/ember accents).
  *
+ * See DESIGN.md for the v2 rules these values encode. The short version: every
+ * text token here is >= 7:1 (WCAG AAA) on every surface it can land on, and
+ * every structural border is >= 3:1. Re-check with a contrast calculator after
+ * any change — these numbers were measured, not eyeballed.
+ *
  * Deliberate NO-PREFLIGHT import: legacy styles.css keeps governing the
  * un-migrated screens, so Tailwind ships only its theme + utility layers here.
  * Screen files migrating to the component kit consume these tokens via
@@ -20,18 +25,20 @@
   --card: #fffef8;
   --card-foreground: #1a1a1a;
   --muted: #f2f0dd;
-  --muted-foreground: #57544a;
+  --muted-foreground: #4a4739;
   --primary: #034f46;
   --primary-foreground: #ffffeb;
   --secondary: #f0d7ff;
   --secondary-foreground: #38204a;
-  --accent: #ffa946;
-  --accent-foreground: #40230a;
-  --destructive: #b3261e;
+  /* A dark ember, not the old #ffa946 — that measured 1.88:1 as text on paper.
+   * Accent is safe to use as text now; see DESIGN.md rule 2. */
+  --accent: #743d00;
+  --accent-foreground: #fff6ec;
+  --destructive: #9a1c14;
   --destructive-foreground: #fff3ef;
-  --success: #036c4e;
+  --success: #025c42;
   --success-foreground: #e8fff6;
-  --warning: #8a5a00;
+  --warning: #6d4600;
   --warning-foreground: #fff7e0;
   --info: #1c4e8a;
   --info-foreground: #e9f2ff;
@@ -39,32 +46,43 @@
   --input: #1a1a1a;
   --ring: #034f46;
   --radius: 0.75rem;
+
+  /* Type scale — ratio 1.25 anchored at 16px. Nothing a user must read goes
+   * below --type-sm. These are the source values; @theme inline below maps
+   * them onto Tailwind's --text-* utilities. See DESIGN.md section 2. */
+  --type-xs: 0.75rem;
+  --type-sm: 0.875rem;
+  --type-base: 1rem;
+  --type-lg: 1.25rem;
+  --type-xl: 1.5625rem;
+  --type-2xl: 1.9375rem;
+  --type-3xl: 2.4375rem;
 }
 
 .theme-dark {
   --background: #161613;
-  --foreground: #f0eee0;
+  --foreground: #f4f2e6;
   --card: #201f19;
-  --card-foreground: #f0eee0;
+  --card-foreground: #f4f2e6;
   --muted: #2a2921;
-  --muted-foreground: #aaa695;
-  --primary: #7adcc5;
-  --primary-foreground: #052420;
-  --secondary: #452f5c;
+  --muted-foreground: #c2beab;
+  --primary: #8fe6cd;
+  --primary-foreground: #04231d;
+  --secondary: #4a3263;
   --secondary-foreground: #f0d7ff;
-  --accent: #ffb766;
-  --accent-foreground: #331d05;
-  --destructive: #ff8a7a;
+  --accent: #ffc27a;
+  --accent-foreground: #3a2004;
+  --destructive: #ff9b8c;
   --destructive-foreground: #2b0603;
-  --success: #5fd6ab;
-  --success-foreground: #04231a;
-  --warning: #ffce7a;
+  --success: #6fe0b6;
+  --success-foreground: #032019;
+  --warning: #ffd489;
   --warning-foreground: #2b1c02;
-  --info: #8ab8f0;
+  --info: #9cc4f5;
   --info-foreground: #0a1f38;
-  --border: #a9a593;
-  --input: #a9a593;
-  --ring: #7adcc5;
+  --border: #c9c4ae;
+  --input: #c9c4ae;
+  --ring: #8fe6cd;
 }
 
 @theme inline {
@@ -95,6 +113,14 @@
   --radius-md: calc(var(--radius) - 0.25rem);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 0.25rem);
+
+  --text-xs: var(--type-xs);
+  --text-sm: var(--type-sm);
+  --text-base: var(--type-base);
+  --text-lg: var(--type-lg);
+  --text-xl: var(--type-xl);
+  --text-2xl: var(--type-2xl);
+  --text-3xl: var(--type-3xl);
 
   --font-sans: 'Figtree', ui-sans-serif, system-ui, sans-serif;
   --font-display: 'EB Garamond', ui-serif, Georgia, serif;

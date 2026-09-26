@@ -104,7 +104,7 @@ export function PlacesTab({
       <section>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="font-display text-2xl font-semibold tracking-tight text-foreground">Saved places</h2>
-          <Button variant="outline" size="sm" onClick={locateMe} disabled={locating}>
+          <Button variant="outline" size="md" onClick={locateMe} disabled={locating}>
             {locating
               ? 'Locating…'
               : currentPosition
@@ -153,7 +153,7 @@ export function PlacesTab({
                     </div>
                     <Button
                       variant="ghost"
-                      size="sm"
+                      size="md"
                       className="shrink-0 self-center text-destructive hover:bg-destructive/10 hover:text-destructive active:bg-destructive/15 active:text-destructive"
                       onClick={() => removePlace(place.id)}
                       aria-label="Remove"

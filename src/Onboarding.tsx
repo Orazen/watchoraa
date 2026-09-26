@@ -127,7 +127,7 @@ export function Onboarding({
                 <div className="flex items-center gap-3">
                   <Button
                     variant="outline"
-                    size="sm"
+                    size="md"
                     aria-label="Slower"
                     onClick={() => setSpeechRate((v) => Math.max(0.7, Number((v - 0.1).toFixed(2))))}
                   >
@@ -137,7 +137,7 @@ export function Onboarding({
                   <strong className="text-lg font-semibold tabular-nums text-foreground">{speechRate.toFixed(2)}x</strong>
                   <Button
                     variant="outline"
-                    size="sm"
+                    size="md"
                     aria-label="Faster"
                     onClick={() => setSpeechRate((v) => Math.min(1.5, Number((v + 0.1).toFixed(2))))}
                   >
@@ -159,7 +159,7 @@ export function Onboarding({
                 <span className="text-base font-medium text-foreground">Vibration</span>
                 <Button
                   variant={hapticsEnabled ? 'secondary' : 'outline'}
-                  size="sm"
+                  size="md"
                   aria-pressed={hapticsEnabled}
                   onClick={() => setHapticsEnabled((v) => !v)}
                 >
@@ -170,7 +170,7 @@ export function Onboarding({
                 <span className="text-base font-medium text-foreground">Alert tones</span>
                 <Button
                   variant={toneEnabled ? 'secondary' : 'outline'}
-                  size="sm"
+                  size="md"
                   aria-pressed={toneEnabled}
                   onClick={() => setToneEnabled((v) => !v)}
                 >
@@ -184,7 +184,7 @@ export function Onboarding({
                     <Button
                       key={level}
                       variant={intensity === level ? 'primary' : 'outline'}
-                      size="sm"
+                      size="md"
                       aria-pressed={intensity === level}
                       onClick={() => setIntensity(level)}
                     >

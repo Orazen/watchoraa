@@ -463,7 +463,7 @@ function WardSettingsPanel({ userId, wardName, announce }: { userId: string; war
             <span className="text-sm font-semibold text-foreground">Free preset</span>
             <div className="flex flex-wrap gap-2" role="group" aria-label={`Free model presets for ${wardName}`}>
               {FREE_MODEL_PRESETS.map((preset) => (
-                <Button key={preset.id} variant="outline" size="sm" onClick={() => applyAiPreset(preset.id)}>
+                <Button key={preset.id} variant="outline" size="md" onClick={() => applyAiPreset(preset.id)}>
                   {preset.label}
                 </Button>
               ))}

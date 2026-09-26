@@ -24,8 +24,9 @@ const buttonVariants = cva(
         destructive: 'bg-destructive text-destructive-foreground hover:brightness-110 active:brightness-95',
         link: 'bg-transparent border-transparent text-primary underline underline-offset-4 hover:brightness-110',
       },
+      // No `sm`: the 36px size is removed rather than left as a trap
+      // (DESIGN.md section 3). Adding it back is a type error.
       size: {
-        sm: 'h-9 px-3 text-sm min-w-11',
         md: 'h-11 px-4 text-base',
         lg: 'h-12 px-6 text-lg',
         xl: 'h-14 px-8 text-lg font-semibold',

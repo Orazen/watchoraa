@@ -1,23 +1,27 @@
-// Voice-first dashboard (v0.5): calm instrument panel rebuilt on the Watchora
+// Voice-first dashboard (v0.6): calm instrument panel rebuilt on the Watchora
 // UI kit (src/components/ui) + Tailwind token utilities from src/theme.css.
-// A single max-w-3xl column: header with kicker + orb, a two-column status
-// strip, the live-location card, large primary actions, and quick secondary
-// navigation. All behaviour from v0.4 — props signature, state, effects,
-// handlers, emergency wiring, and every spoken/visible string — is preserved
-// verbatim; this is a visual/layout redesign only.
+// A single max-w-3xl column arranged as the three bands DESIGN.md section 4
+// specifies, in priority order: Status (one line, always visible), Command
+// (the orb and the type-to-Jarvis bar — the two ways in), and Do (the primary
+// actions, large and few). Everything below Do is supporting context, and
+// navigation lives in the sidebar rather than here.
+//
+// The v0.5 "quick nav" outline row (Places / Contacts / Community / Settings)
+// was removed: all four were `onOpenTab(...)` calls onto destinations that are
+// already tabs in the sidebar, so they were four pure-duplicate tab stops.
+//
+// Props signature, state, effects, handlers, emergency wiring, and every
+// spoken and announced string are unchanged. Nothing in this file adds,
+// removes, or rewords a single utterance.
 
 import { useEffect, useRef, useState, type ComponentType } from 'react';
 import {
   BookOpen,
   CheckCircle2,
-  Map as MapIcon,
   MapPin,
   Mic,
-  Settings as SettingsIcon,
   Shield,
-  ShieldCheck,
   Siren,
-  Users,
 } from 'lucide-react';
 import { EmergencyControl, type EmergencyStatus } from '../components/EmergencyControl';
 import { PermissionStatusCard } from '../permissions/PermissionStatusCard';
@@ -314,40 +318,17 @@ export function VoiceFirstDashboard({
 }) {
   return (
     <div className="mx-auto w-full max-w-3xl px-4 pb-10 pt-2">
-      <header className="flex items-center justify-between gap-4">
+      <header>
         <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">Command centre</p>
-        <div className="flex shrink-0 items-center justify-end">
-          {voiceState !== undefined && onOrbToggle ? (
-            <WatchoraOrb
-              state={orbStateFor(voiceState, hazardActive)}
-              size={110}
-              onClick={onOrbToggle}
-            />
-          ) : (
-            <VoiceControlButton />
-          )}
-        </div>
       </header>
 
-      <div className="mt-6">
-        <TypeToJarvis autoFocus={voiceState !== undefined && (voiceState === 'unsupported' || voiceState === 'permission-needed')} />
-      </div>
+      {/* DESIGN.md section 4: Home is three bands in priority order — Status,
+          Command, Do. Everything else is navigation and belongs in the sidebar.
 
-      {offline && (
-        <Alert tone="warning" politeness="polite" className="mt-4">
-          <p className="text-base leading-relaxed">
-            You are offline. Local hazard detection, saved information, and OCR remain available. Cloud scene descriptions and remote emergency delivery may be unavailable.
-          </p>
-        </Alert>
-      )}
-
-      {emergency.state === 'active' && (
-        <div className="mt-4">
-          <EmergencyControl status={emergency} onTrigger={onEmergency} onCancel={onCancelEmergency} onResolve={onResolveEmergency} speak={speak} />
-        </div>
-      )}
-
-      <section className="mt-6 grid gap-4 md:grid-cols-2">
+          Band 1 — Status: one line, always visible. The heading lives on the
+          status card rather than on a kicker so the screen keeps a real
+          heading outline (the thing blind users navigate by). */}
+      <section aria-label="Status" className="mt-4 grid gap-4 md:grid-cols-2">
         <Card role="region" aria-label="Watchora status" className="flex flex-col">
           <CardContent className="flex flex-1 items-start gap-3 p-5">
             <span
@@ -384,7 +365,92 @@ export function VoiceFirstDashboard({
         <PermissionStatusCard service={permissionService} onOpen={onOpenPermissions} />
       </section>
 
-      <section className="mt-6">
+      {offline && (
+        <Alert tone="warning" politeness="polite" className="mt-4">
+          <p className="text-base leading-relaxed">
+            You are offline. Local hazard detection, saved information, and OCR remain available. Cloud scene descriptions and remote emergency delivery may be unavailable.
+          </p>
+        </Alert>
+      )}
+
+      {/* Band 2 — Command: the orb and the type-to-Jarvis bar. These are the
+          two ways in, so they sit together and ahead of every action. */}
+      <section aria-label="Give Watchora a command" className="mt-8">
+        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">Command</p>
+        <div className="mt-3 flex justify-center">
+          {voiceState !== undefined && onOrbToggle ? (
+            <WatchoraOrb
+              state={orbStateFor(voiceState, hazardActive)}
+              size={110}
+              onClick={onOrbToggle}
+            />
+          ) : (
+            <VoiceControlButton />
+          )}
+        </div>
+        <div className="mt-4">
+          <TypeToJarvis autoFocus={voiceState !== undefined && (voiceState === 'unsupported' || voiceState === 'permission-needed')} />
+        </div>
+      </section>
+
+      {emergency.state === 'active' && (
+        <div className="mt-6">
+          <EmergencyControl status={emergency} onTrigger={onEmergency} onCancel={onCancelEmergency} onResolve={onResolveEmergency} speak={speak} />
+        </div>
+      )}
+
+      {/* Band 3 — Do: the primary actions, large and few.
+
+          The v0.5 "quick nav" outline row (Places / Contacts / Community /
+          Settings) is gone. All four called onOpenTab('routes' | 'sos' |
+          'community' | 'settings'), and all four of those are already tabs in
+          the sidebar (App.tsx `tabs`) — so it was four extra tab stops
+          duplicating navigation that already exists, and it put them between
+          the command bar and the real actions. Nothing became unreachable. */}
+      <section aria-label="Primary actions" className="mt-8">
+        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">Do</p>
+        <div className="mt-3 grid gap-4 sm:grid-cols-2">
+          <DashboardActionCard
+            icon={MapPin}
+            title="Assist"
+            explanation="Use the camera to understand your surroundings."
+            buttonLabel="Start Assist"
+            onActivate={() => onOpenTab('tracking')}
+            voiceHint="Describe what is ahead"
+          />
+          <DashboardActionCard
+            icon={Shield}
+            title="Safe Journey"
+            explanation="Watchora monitors your trip and asks if you need help."
+            buttonLabel={activeJourney ? 'Open active journey' : 'Start Safe Journey'}
+            onActivate={() => onOpenTab('journey')}
+            voiceHint="Start a safe journey"
+            state={activeJourney ? `Active: ${activeJourney.destination}` : 'No active journey'}
+            stateTone={activeJourney ? 'ok' : 'neutral'}
+          />
+          <DashboardActionCard
+            icon={BookOpen}
+            title="Read"
+            explanation="Point at text and hear it read aloud."
+            buttonLabel="Read text"
+            onActivate={() => onOpenTab('tracking')}
+            voiceHint="Read this"
+          />
+          <DashboardActionCard
+            icon={Siren}
+            title="Emergency"
+            explanation="Share your location with trusted contacts."
+            buttonLabel="Open emergency"
+            onActivate={() => onOpenTab('sos')}
+            voiceHint="Emergency"
+            buttonVariant="destructive"
+          />
+        </div>
+      </section>
+
+      {/* Supporting context, below the primary band: the live fix, its
+          accuracy, and the location-scoped journey shortcut. */}
+      <section aria-label="Location" className="mt-6">
         <LiveLocationCard
           onOpenJourney={() => onOpenTab('journey')}
           permissionService={permissionService}
@@ -393,65 +459,8 @@ export function VoiceFirstDashboard({
         />
       </section>
 
-      <section className="mt-8 grid gap-4 sm:grid-cols-2">
-        <DashboardActionCard
-          icon={MapPin}
-          title="Assist"
-          explanation="Use the camera to understand your surroundings."
-          buttonLabel="Start Assist"
-          onActivate={() => onOpenTab('tracking')}
-          voiceHint="Describe what is ahead"
-        />
-        <DashboardActionCard
-          icon={Shield}
-          title="Safe Journey"
-          explanation="Watchora monitors your trip and asks if you need help."
-          buttonLabel={activeJourney ? 'Open active journey' : 'Start Safe Journey'}
-          onActivate={() => onOpenTab('journey')}
-          voiceHint="Start a safe journey"
-          state={activeJourney ? `Active: ${activeJourney.destination}` : 'No active journey'}
-          stateTone={activeJourney ? 'ok' : 'neutral'}
-        />
-        <DashboardActionCard
-          icon={BookOpen}
-          title="Read"
-          explanation="Point at text and hear it read aloud."
-          buttonLabel="Read text"
-          onActivate={() => onOpenTab('tracking')}
-          voiceHint="Read this"
-        />
-        <DashboardActionCard
-          icon={Siren}
-          title="Emergency"
-          explanation="Share your location with trusted contacts."
-          buttonLabel="Open emergency"
-          onActivate={() => onOpenTab('sos')}
-          voiceHint="Emergency"
-          buttonVariant="destructive"
-        />
-      </section>
-
-      <section className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Button variant="outline" className="h-auto w-full flex-col gap-1.5 px-3 py-4" onClick={() => onOpenTab('routes')}>
-          <MapIcon className="size-6" aria-hidden="true" />
-          <span className="font-semibold">Places</span>
-        </Button>
-        <Button variant="outline" className="h-auto w-full flex-col gap-1.5 px-3 py-4" onClick={() => onOpenTab('sos')}>
-          <Users className="size-6" aria-hidden="true" />
-          <span className="font-semibold">Contacts</span>
-        </Button>
-        <Button variant="outline" className="h-auto w-full flex-col gap-1.5 px-3 py-4" onClick={() => onOpenTab('community')}>
-          <ShieldCheck className="size-6" aria-hidden="true" />
-          <span className="font-semibold">Community</span>
-        </Button>
-        <Button variant="outline" className="h-auto w-full flex-col gap-1.5 px-3 py-4" onClick={() => onOpenTab('settings')}>
-          <SettingsIcon className="size-6" aria-hidden="true" />
-          <span className="font-semibold">Settings</span>
-        </Button>
-      </section>
-
       {emergency.state !== 'active' && (
-        <section className="mt-8">
+        <section aria-label="Emergency" className="mt-6">
           <EmergencyControl status={emergency} onTrigger={onEmergency} onCancel={onCancelEmergency} onResolve={onResolveEmergency} speak={speak} />
         </section>
       )}

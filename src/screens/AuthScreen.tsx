@@ -111,7 +111,7 @@ export function AuthScreen({
             </h2>
           </div>
           {onClose ? (
-            <Button variant="ghost" size="sm" onClick={onClose} aria-label="Close">
+            <Button variant="ghost" size="md" onClick={onClose} aria-label="Close">
               <X aria-hidden="true" />
               Close
             </Button>

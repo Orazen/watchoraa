@@ -3,7 +3,10 @@ import { cn } from './cn';
 
 /** Shared control chrome: 2px ink border, generous 44px+ target, visible focus ring. */
 const controlBase =
-  'w-full rounded-lg border-2 border-input bg-card px-3.5 text-foreground placeholder:text-muted-foreground/70 ' +
+  // Placeholder is real text, so it holds the same 9.23:1 / 8.85:1 as any
+  // other copy — /70 measured 4.04:1 light (under the 4.5:1 AA floor) and
+  // 5.02:1 dark, weaker than the rest of the copy in both modes.
+  'w-full rounded-lg border-2 border-input bg-card px-3.5 text-foreground placeholder:text-muted-foreground ' +
   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ' +
   'disabled:cursor-not-allowed disabled:opacity-55';
 
@@ -50,7 +53,7 @@ export function Field({
       </label>
       {children}
       {hint ? (
-        <p id={`${htmlFor}-hint`} className="text-xs text-muted-foreground">
+        <p id={`${htmlFor}-hint`} className="text-sm text-muted-foreground">
           {hint}
         </p>
       ) : null}
