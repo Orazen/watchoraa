@@ -14,6 +14,16 @@ import {
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import { Alert, AlertDescription, Badge, Button, Card, CardContent, CardHeader, CardTitle, Field, Input } from './components/ui';
 import { runDemoCommand, DEMO_SUGGESTIONS, DEMO_UNKNOWN_REPLY, type DemoExchange } from './landingDemo';
+import { LandingVoiceControl } from './LandingVoiceControl';
+import type { Dispatch, SetStateAction } from 'react';
+
+export type DemoLine = {
+  who: 'you' | 'watchora';
+  text: string;
+  note?: string;
+  intent?: string;
+  requiresConfirmation?: boolean;
+};
 
 // Watchora landing page — the logged-out front door.
 //
@@ -213,8 +223,7 @@ type SpeechRecognitionLike = {
   onend: (() => void) | null;
 };
 
-function DemoSection() {
-  const [lines, setLines] = useState<Array<{ who: 'you' | 'watchora'; text: string; note?: string; intent?: string; requiresConfirmation?: boolean }>>([]);
+function DemoSection({ lines, setLines }: { lines: DemoLine[]; setLines: Dispatch<SetStateAction<DemoLine[]>> }) {
   const [value, setValue] = useState('');
   const [micNote, setMicNote] = useState<string | null>(null);
   const canSpeak = typeof window !== 'undefined' && 'speechSynthesis' in window;
@@ -396,6 +405,7 @@ function DemoSection() {
 }
 
 export function LandingPage({ onSignIn, onSignUp }: LandingProps) {
+  const [demoLines, setDemoLines] = useState<DemoLine[]>([]);
   return (
     <main className="bg-background font-sans text-foreground">
       <a
@@ -532,7 +542,7 @@ export function LandingPage({ onSignIn, onSignUp }: LandingProps) {
       {/* ── Cream chamber: the live demo ────────────────────── */}
       {/* The skip link lands here: for a blind visitor this section IS the
           product pitch. #wispr-demo has a visible focus ring in styles.css. */}
-      <DemoSection />
+      <DemoSection lines={demoLines} setLines={setDemoLines} />
 
       {/* ── Ink chamber: features ───────────────────────────── */}
       <section
@@ -706,7 +716,7 @@ export function LandingPage({ onSignIn, onSignUp }: LandingProps) {
       </section>
 
       {/* ── Cream chamber: final CTA ────────────────────────── */}
-      <section className="bg-background text-foreground" aria-labelledby="wispr-cta-heading">
+      <section id="wispr-account" className="bg-background text-foreground" aria-labelledby="wispr-cta-heading">
         <div className="mx-auto max-w-5xl px-6 py-24">
           <Card className="grid gap-10 border-2 p-8 md:grid-cols-[1.2fr_1fr] md:p-12">
             <Reveal>
@@ -750,6 +760,28 @@ export function LandingPage({ onSignIn, onSignUp }: LandingProps) {
           </Card>
         </div>
       </section>
+
+      {/* ── Voice control (tap-to-talk orb) ─────────────────── */}
+      {/* Voice-run demo exchanges land in the SAME conversation log the demo
+          section renders, so what the visitor said and heard stays visible. */}
+      <LandingVoiceControl
+        onSignIn={onSignIn}
+        onSignUp={onSignUp}
+        onNavigate={goto}
+        onDemoExchange={(exchange) =>
+          setDemoLines((prev) => [
+            ...prev,
+            { who: 'you', text: exchange.transcript },
+            {
+              who: 'watchora',
+              text: exchange.reply.say,
+              note: exchange.reply.note || undefined,
+              intent: exchange.intent,
+              requiresConfirmation: exchange.requiresConfirmation,
+            },
+          ])
+        }
+      />
 
       {/* ── Ink footer band ─────────────────────────────────── */}
       <footer className="bg-foreground text-background">

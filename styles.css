@@ -2838,3 +2838,55 @@ input[type='range']:active::-moz-range-track {
 .app-loading p {
   font-size: 16px;
 }
+
+/* Landing voice control orb — tap-to-talk (never always-listening). */
+.voice-orb {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 9999px;
+  border: 2px solid var(--color-vast-ink);
+  background: #034f46;
+  color: #ffffff;
+  box-shadow: 0 6px 16px rgb(26 26 26 / 0.25);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.voice-orb:hover {
+  background: #04544c;
+}
+
+.voice-orb:focus-visible {
+  outline: var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* Listening = a slow pulse ring (microphone-open semantics). */
+.voice-orb[data-phase='listening'] {
+  animation: voice-orb-pulse 1.4s ease-out infinite;
+}
+
+@keyframes voice-orb-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgb(3 79 70 / 0.45);
+  }
+  70% {
+    box-shadow: 0 0 0 14px rgb(3 79 70 / 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgb(3 79 70 / 0);
+  }
+}
+
+.voice-orb[data-phase='speaking'] {
+  background: var(--color-vast-ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-orb[data-phase='listening'] {
+    animation: none;
+  }
+}

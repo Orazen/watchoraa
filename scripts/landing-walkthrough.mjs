@@ -15,11 +15,15 @@ const browser = await chromium.launch();
 const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
 const page = await context.newPage();
 
-// Capture EVERY speechSynthesis utterance + every un-user-initiated one.
+// Capture EVERY speechSynthesis utterance + every un-user-initiated one,
+// and install a controllable fake SpeechRecognition for the voice-control
+// checks (headless Chromium has the real one but no usable audio backend).
 await page.addInitScript(() => {
   window.__spoken = [];
   window.__speechCalls = 0;
+  window.__cancelCalls = 0;
   const orig = window.speechSynthesis?.speak?.bind(window.speechSynthesis);
+  const origCancel = window.speechSynthesis?.cancel?.bind(window.speechSynthesis);
   if (orig) {
     window.speechSynthesis.speak = (u) => {
       window.__spoken.push(String(u.text));
@@ -27,6 +31,25 @@ await page.addInitScript(() => {
       return orig(u);
     };
   }
+  if (origCancel) {
+    window.speechSynthesis.cancel = () => {
+      window.__cancelCalls += 1;
+      return origCancel();
+    };
+  }
+  window.__recogInstances = [];
+  class FakeRecognition {
+    constructor() {
+      window.__recogInstances.push(this);
+      this.onstart = null; this.onresult = null; this.onerror = null; this.onend = null;
+      this.lang = ''; this.interimResults = false; this.maxAlternatives = 1;
+    }
+    start() { setTimeout(() => this.onstart && this.onstart(), 0); }
+    stop() { setTimeout(() => this.onend && this.onend(), 0); }
+    abort() { this.stop(); }
+  }
+  window.SpeechRecognition = FakeRecognition;
+  window.webkitSpeechRecognition = FakeRecognition;
 });
 
 const consoleErrors = [];
@@ -174,7 +197,101 @@ const mlog = await mpage.evaluate(() => document.querySelector('[role="log"]')?.
 check('demo works on mobile', /You can say:/.test(mlog), mlog.slice(0, 80));
 await mobile.close();
 
-// 15. Console errors.
+// ── Voice control (tap-to-talk orb) ────────────────────────────────────
+async function pressOrbAndSpeak(utterance, wait = 250) {
+  await page.evaluate(() => document.querySelector('.voice-orb').click());
+  await page.waitForTimeout(120);
+  await page.evaluate((t) => {
+    const inst = window.__recogInstances[window.__recogInstances.length - 1];
+    inst.onresult({ results: [[{ transcript: t }]] });
+  }, utterance);
+  await page.waitForTimeout(wait);
+}
+const getSpoken = () => page.evaluate(() => window.__spoken);
+
+// 16. The mic is never started before the visitor opts in.
+const recosBefore = await page.evaluate(() => window.__recogInstances.length);
+check('no microphone activity before user opts in', recosBefore === 0, `instances=${recosBefore}`);
+
+// 17. Orb exists with a clear label and a visible status region.
+const orbState = await page.evaluate(() => {
+  const orb = document.querySelector('.voice-orb');
+  return { label: orb?.getAttribute('aria-label'), hasStatus: !!document.querySelector('[data-voice-control] [role="status"]') };
+});
+check('orb present with clear label + status region', orbState.label === 'Start voice control' && orbState.hasStatus, JSON.stringify(orbState));
+
+// 18. First press = spoken onboarding, no recognition yet.
+await page.evaluate(() => document.querySelector('.voice-orb').click());
+await page.waitForTimeout(200);
+const onboardSpoken = await getSpoken();
+const instancesAfterOnboard = await page.evaluate(() => window.__recogInstances.length);
+check('first press speaks the onboarding orientation', onboardSpoken.some((t) => t.includes('Voice control is on')), JSON.stringify(onboardSpoken.slice(-1)));
+check('onboarding does not start the microphone', instancesAfterOnboard === 0, `instances=${instancesAfterOnboard}`);
+
+// 19. The onboarding speech is still "playing" in headless (no onend event
+// without an audio backend), so the first press barges in and silences —
+// correct product behaviour — and the press after that starts listening.
+await page.evaluate(() => document.querySelector('.voice-orb').click());
+await page.waitForTimeout(150);
+await page.evaluate(() => document.querySelector('.voice-orb').click());
+await page.waitForTimeout(150);
+const listening = await page.evaluate(() => document.querySelector('.voice-orb')?.getAttribute('data-phase'));
+check('orb enters listening phase', listening === 'listening', `phase=${listening}`);
+await page.evaluate((t) => {
+  const inst = window.__recogInstances[window.__recogInstances.length - 1];
+  inst.onresult({ results: [[{ transcript: t }]] });
+}, 'try the demo');
+await page.waitForTimeout(250);
+const afterNav = await page.evaluate(() => ({ focus: document.activeElement?.id, spoken: window.__spoken.slice(-1)[0] }));
+check('voice command "try the demo" navigates + speaks', afterNav.focus === 'wispr-demo' && /Taking you to the live demo/.test(afterNav.spoken || ''), JSON.stringify(afterNav));
+await pressOrbAndSpeak('what does watchora do');
+const afterRead = await page.evaluate(() => window.__spoken.slice(-1)[0]);
+check('"what does watchora do" reads the features summary', /reads the world out loud/.test(afterRead || ''), afterRead);
+
+// 20. Unknown utterance → named-choice repair, choices are tappable.
+await pressOrbAndSpeak('make me a sandwich');
+const clarify = await page.evaluate(() => ({
+  spoken: window.__spoken.slice(-1)[0],
+  choiceButtons: [...document.querySelectorAll('[aria-label^="Answer:"]')].map((b) => b.getAttribute('aria-label')),
+}));
+check('unknown utterance gets named-choice repair', /Did you want/.test(clarify.spoken || '') && clarify.choiceButtons.length === 3, JSON.stringify(clarify));
+
+// 21. Tapping a choice resolves it (keyboard/tap answer path).
+await page.evaluate(() => (document.querySelector('[aria-label="Answer: demo"]'))?.click());
+await page.waitForTimeout(200);
+const afterChoice = await page.evaluate(() => document.activeElement?.id);
+check('tapping a repair choice navigates', afterChoice === 'wispr-demo', `focus=${afterChoice}`);
+
+// 22. Voice help.
+await pressOrbAndSpeak('what can i say');
+const helpSpoken = await getSpoken();
+check('"what can i say" speaks the command list', helpSpoken.some((t) => t.includes('You can say')), JSON.stringify(helpSpoken.slice(-1)));
+
+// 23. Voice-run demo exchange lands in the visible conversation log.
+await pressOrbAndSpeak('what time is it');
+const demoLogVoice = await page.evaluate(() => document.querySelector('[role="log"]')?.textContent || '');
+check('voice demo exchange appears in the demo log', /It is \d/.test(demoLogVoice), demoLogVoice.slice(-120));
+
+// 24. "stop" silences immediately.
+await pressOrbAndSpeak('what does watchora do', 150);
+const cancelsBefore = await page.evaluate(() => window.__cancelCalls);
+await pressOrbAndSpeak('stop', 150);
+const stopState = await page.evaluate(() => ({
+  status: document.querySelector('[data-voice-control] [role="status"]')?.textContent || '',
+  cancels: window.__cancelCalls,
+}));
+check('"stop" silences the assistant', stopState.status.includes('Silenced') && stopState.cancels > cancelsBefore, JSON.stringify(stopState));
+
+// 25. Hands-free toggle exists and flips without breaking state.
+await page.evaluate(() => document.querySelector('[aria-label^="Hands-free"]')?.click());
+await page.waitForTimeout(120);
+const hfOn = await page.evaluate(() => document.querySelector('[aria-label^="Hands-free"]')?.getAttribute('aria-pressed'));
+await page.evaluate(() => document.querySelector('[aria-label^="Hands-free"]')?.click());
+await page.waitForTimeout(120);
+const hfOff = await page.evaluate(() => document.querySelector('[aria-label^="Hands-free"]')?.getAttribute('aria-pressed'));
+check('hands-free toggle flips', hfOn === 'true' && hfOff === 'false', `on=${hfOn} off=${hfOff}`);
+
+// 26. Console errors (after the voice run too).
 check('no console/page errors', consoleErrors.length === 0, consoleErrors.slice(0, 3).join(' | '));
 
 const failed = results.filter((r) => !r.ok);
