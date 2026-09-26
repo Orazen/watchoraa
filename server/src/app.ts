@@ -49,7 +49,12 @@ export function createApp() {
           // does not cover <audio>/<video> loads, so without an explicit
           // mediaSrc the browser silently blocks playback with a CSP error
           // and Settings > Test voice (and every spoken response) fails.
-          mediaSrc: ["'self'", 'blob:'],
+          // 'data:' covers the autoplay-unlock gesture: the first user
+          // gesture plays a tiny constant WAV shipped as a data URI
+          // (SILENT_WAV_DATA_URI), and Chrome enforces media-src on it —
+          // without 'data:' the unlock fails on strict browsers and the
+          // first spoken response can be blocked by autoplay policy.
+          mediaSrc: ["'self'", 'blob:', 'data:'],
         },
       },
     }),
