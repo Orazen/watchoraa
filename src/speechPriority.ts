@@ -125,6 +125,27 @@ export class SpeechPriorityManager {
     if (this.queue.length < 5) this.queue.push(req);
   }
 
+  /**
+   * Call when speech was stopped from OUTSIDE the manager — the stop control,
+   * "be quiet", a screen-reader shortcut.
+   *
+   * The play callback stops the previous utterance with `pause()`, and a paused
+   * media element fires neither `ended` nor `error`. So the manager went on
+   * believing an utterance was still playing, and every later request at equal
+   * or lower priority was queued and never played — the queue only drained
+   * when the 12s watchdog fired. Measured in production: the user stops
+   * speech, asks a question, and hears nothing at all for up to twelve
+   * seconds, with no error anywhere. For a voice-first app that is
+   * indistinguishable from the app having stopped working.
+   *
+   * Internal interruptions must NOT call this. When the manager interrupts on
+   * its own it calls stop() and immediately reassigns currentPriority, so it is
+   * already managing the queue; releasing there would double-advance it.
+   */
+  releasedExternally(): void {
+    this.onEnded();
+  }
+
   /** Call when the active utterance ends to play the next queued item. */
   onEnded(): void {
     // The neural-audio path and the speechSynthesis fallback can BOTH fire an

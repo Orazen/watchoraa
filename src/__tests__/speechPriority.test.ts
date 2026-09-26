@@ -149,3 +149,56 @@ describe('SpeechPriorityManager — interruption and queueing', () => {
     expect(play).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('SpeechPriorityManager — external stop', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  // THE DEFECT, measured in production: stopping speech pauses the audio
+  // element, and a paused element fires neither `ended` nor `error`. The
+  // manager so kept believing an utterance was still playing, queued every
+  // later equal-priority request, and drained nothing until the 12s watchdog.
+  // The user stopped speech, asked a question, and heard nothing at all for up
+  // to twelve seconds with no error anywhere — indistinguishable, for a blind
+  // user, from the app having stopped working.
+  it('resumes speaking immediately after speech is stopped from outside', () => {
+    const { mgr, play } = makeManager();
+    mgr.speak({ text: 'A long answer.', priority: 5 });
+    expect(play).toHaveBeenCalledTimes(1);
+
+    // The stop control fires: the element is paused, so no end event arrives.
+    mgr.releasedExternally();
+
+    mgr.speak({ text: 'What time is it?', priority: 5 });
+    expect(play).toHaveBeenCalledTimes(2);
+    expect(play).toHaveBeenLastCalledWith('What time is it?', 5, undefined);
+  });
+
+  it('does not wait for the watchdog after an external stop', () => {
+    const { mgr, play } = makeManager();
+    mgr.speak({ text: 'A long answer.', priority: 5 });
+    mgr.releasedExternally();
+    vi.advanceTimersByTime(100);
+    mgr.speak({ text: 'Still there?', priority: 5 });
+    expect(play).toHaveBeenCalledTimes(2);
+  });
+
+  it('drains a queue that was already waiting when speech was stopped', () => {
+    const { mgr, play } = makeManager();
+    mgr.speak({ text: 'First.', priority: 5 });
+    mgr.speak({ text: 'Queued.', priority: 5 }); // equal priority -> queued
+    expect(play).toHaveBeenCalledTimes(1);
+
+    mgr.releasedExternally();
+    expect(play).toHaveBeenCalledTimes(2);
+    expect(play).toHaveBeenLastCalledWith('Queued.', 5, undefined);
+  });
+
+  it('is a no-op when nothing is playing', () => {
+    const { mgr, play } = makeManager();
+    mgr.releasedExternally();
+    mgr.releasedExternally();
+    mgr.speak({ text: 'Hello.', priority: 5 });
+    expect(play).toHaveBeenCalledTimes(1);
+  });
+});

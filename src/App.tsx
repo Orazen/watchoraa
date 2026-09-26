@@ -707,6 +707,23 @@ function MainApp({
     voiceBridge.current.onSpeechChange?.(false);
   }
 
+  /**
+   * Stops speech on the user's own instruction (stop control, "be quiet", a
+   * screen-reader shortcut) and tells the priority manager the utterance is
+   * over so the queue resumes.
+   *
+   * Distinct from stopSpeaking(), which is also called from inside the
+   * manager's own play/interrupt path — there the manager is already tracking
+   * the queue, and releasing would double-advance it. The distinction matters:
+   * because `pause()` fires neither `ended` nor `error`, an external stop used
+   * to leave the manager locked, and every following question was queued into
+   * a queue that nothing would ever drain.
+   */
+  function stopSpeechNow() {
+    stopSpeaking();
+    speechManagerRef.current?.releasedExternally();
+  }
+
   // Autoplay-policy unlock: iOS/Safari/in-app WebViews refuse programmatic
   // audio.play() unless a real user gesture has already played audio. Play
   // the persistent element once (a 60 ms silent WAV) inside the first
@@ -1153,7 +1170,7 @@ function MainApp({
         speak(lastSpokenRef.current || 'I have nothing to repeat yet.', 5, 'voice-repeat');
         break;
       case 'stop_speech':
-        stopSpeaking();
+        stopSpeechNow();
         speak('Stopping speech. Emergency warnings remain active.', 5, 'voice-stop');
         break;
       case 'speak_slower':
@@ -1322,7 +1339,7 @@ function MainApp({
   useEffect(() => {
     voiceBridge.current.speak = (text, priority = 5, dedupeKey) => speak(text, priority as SpeechPriority, dedupeKey);
     voiceBridge.current.handleCommand = (intent) => handleVoiceCommand(intent);
-    voiceBridge.current.stopSpeaking = () => stopSpeaking();
+    voiceBridge.current.stopSpeaking = () => stopSpeechNow();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [voiceBridge]);
 
@@ -1334,7 +1351,7 @@ function MainApp({
   useEffect(() => {
     const interrupt = () => {
       if (speechActiveCountRef.current > 0) {
-        stopSpeaking();
+        stopSpeechNow();
         if ('vibrate' in navigator) navigator.vibrate(15);
       }
     };
@@ -1675,7 +1692,7 @@ function MainApp({
     return () => {
       stopCamera();
       recognitionRef.current?.stop();
-      stopSpeaking();
+      stopSpeechNow();
       analysisAbortRef.current?.abort();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
