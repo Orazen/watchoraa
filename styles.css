@@ -1619,7 +1619,11 @@ input[type='range']:active::-moz-range-track {
  * ink, while the page behind it is --background and --focus-ring clears 3:1
  * against both themes there. */
 #wispr-features:focus,
-#wispr-features:focus-visible {
+#wispr-features:focus-visible,
+#wispr-demo:focus,
+#wispr-demo:focus-visible,
+#wispr-safety:focus,
+#wispr-safety:focus-visible {
   outline: var(--focus-ring);
   outline-offset: 2px;
 }
