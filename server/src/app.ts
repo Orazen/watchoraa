@@ -36,7 +36,12 @@ export function createApp() {
           // vector tiles for the Safe Journey / Caregiver live-location map
           // (MapLibre GL JS). Free, no API key, MIT-licensed — same
           // zero-paid-key approach already used for onnxruntime-web/Tesseract.
-          connectSrc: ["'self'", 'https://tiles.openfreemap.org'],
+          // Google Fonts' <link rel="preconnect"> in index.html is a
+          // connect-class request, so Chrome intermittently reports it under
+          // connect-src even though the stylesheet itself is allowed by
+          // styleSrc. The host is already trusted for styles; allowing the
+          // preconnect keeps the console clean.
+          connectSrc: ["'self'", 'https://tiles.openfreemap.org', 'https://fonts.googleapis.com'],
           // Web Workers load their JS bundle as a same-origin blob/module URL.
           workerSrc: ["'self'", 'blob:'],
           // Neural TTS audio (server/src/routes/tts.ts) is played from a
