@@ -96,3 +96,25 @@ export function fireHapticEvent(event: HapticEvent, settings: HapticSettings) {
       break;
   }
 }
+
+/**
+ * Fires a caller-defined touch signature through the same engine as the
+ * hazard vocabulary, so a custom pattern obeys the user's haptics/tone toggles
+ * and intensity setting instead of bypassing them.
+ *
+ * Used by the companion mascot, whose whole premise is that a blind user's
+ * primary state channel is touch. Declared here rather than in the companion
+ * module because `vibrate` and `playTone` are module-private by design — the
+ * only supported way to make sound and vibration is through this file.
+ */
+export function fireTouchPattern(
+  pattern: { vibrate: number | number[]; tone: { freqs: number[]; ms: number; type: OscillatorType } | null } | null,
+  settings: HapticSettings,
+) {
+  if (!pattern) return;
+  const gain = INTENSITY_GAIN[settings.intensity];
+  if (settings.hapticsEnabled) vibrate(pattern.vibrate);
+  if (settings.toneEnabled && pattern.tone) {
+    playTone(pattern.tone.freqs, pattern.tone.ms, pattern.tone.type, gain);
+  }
+}

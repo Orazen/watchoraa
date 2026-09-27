@@ -187,6 +187,40 @@ const FEATURES: Feature[] = [
 
 const MODES = ['Navigation', 'Reading', 'Environment', 'Assistant'];
 
+/** The Watch companion section. `says` strings are the app's real output. */
+const WATCH_POINTS = [
+  {
+    title: 'It watches, you walk',
+    body: 'Switch Watch on and it describes the path ahead only when the scene genuinely changes — not on a timer, and never the same thing twice. Standing still in a busy street stays silent.',
+    says: 'Ahead: a person at 2 o\'clock, and a car at 10 o\'clock.',
+  },
+  {
+    title: 'You feel it too',
+    body: 'Every state has its own vibration signature as well as its own voice. A hazard is a fast hard buzz you can read through a coat, with your phone in a pocket — no screen, no sound, no training needed.',
+    says: null,
+  },
+  {
+    title: 'It tells you when you turn',
+    body: 'Your phone\'s motion sensors work out when you have turned, and how far, even with no compass at all. It uses the compass to name a direction only when the readings agree.',
+    says: 'You have turned about 45 degrees to your left.',
+  },
+  {
+    title: 'It looks at your feet',
+    body: 'When you angle your phone down, the camera stops seeing ahead — so it says so, and warns you about the ground where kerbs, steps and leads actually are.',
+    says: 'Your phone is angled at the ground — check your feet for kerbs and steps.',
+  },
+  {
+    title: 'It never says "clear"',
+    body: 'An empty frame does not mean a safe path. The detector has no concept of a kerb, a step or a glass door, so Watch will tell you it has nothing to describe rather than tell you the way is open.',
+    says: 'Nothing is visible to me right now — I am not saying the path is clear.',
+  },
+  {
+    title: 'It admits what it cannot do',
+    body: 'No compass, no vibration, camera blocked — whatever your device is missing, it says so out loud instead of going quiet and letting you assume it is working.',
+    says: 'No compass on this device, so I will not name directions. I can still tell when you turn.',
+  },
+];
+
 const PRINCIPLES = [
   {
     title: 'Uncertainty is never hidden',
@@ -614,6 +648,54 @@ export function LandingPage({ onSignIn, onSignUp }: LandingProps) {
                             Hear it
                           </Button>
                         ) : null}
+                      </div>
+                    ) : null}
+                  </CardContent>
+                </Card>
+              </Reveal>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Watch: the companion ───────────────────────────────
+          The one section whose subject is a mascot, so the copy has to earn it.
+          Every claim below is behaviour the app actually implements and that
+          is unit-tested in src/__tests__/companion.test.ts — in particular the
+          two that matter most to our users: the companion is FELT as well as
+          heard, and it never claims the path is clear. */}
+      <section
+        className="bg-foreground text-background"
+        id="wispr-watch"
+        tabIndex={-1}
+        aria-labelledby="wispr-watch-heading"
+      >
+        <div className="mx-auto max-w-6xl px-6 py-24">
+          <Reveal>
+            <h2 id="wispr-watch-heading" className="m-0 font-display text-4xl font-medium tracking-tight md:text-5xl">
+              Say &ldquo;start watch&rdquo;
+            </h2>
+          </Reveal>
+          <Reveal delay={80}>
+            <p className="m-0 mt-3 max-w-2xl text-lg leading-relaxed text-background/70">
+              Watchora Watch is a companion that keeps an eye on the path ahead while you walk, and speaks
+              only when something actually changes. You feel it through your phone as much as you hear it.
+            </p>
+          </Reveal>
+
+          <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {WATCH_POINTS.map((point, i) => (
+              <Reveal key={point.title} delay={(i % 3) * 90}>
+                <Card className="h-full">
+                  <CardHeader>
+                    <CardTitle className="font-display text-2xl">{point.title}</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="m-0 text-base font-medium leading-relaxed">{point.body}</p>
+                    {point.says ? (
+                      <div className="mt-4 border-t-2 border-dashed border-foreground/20 pt-4">
+                        <p className="m-0 text-sm font-semibold uppercase tracking-wide text-muted-foreground">It says</p>
+                        <p className="m-0 mt-1 font-display text-lg leading-snug">{point.says}</p>
                       </div>
                     ) : null}
                   </CardContent>

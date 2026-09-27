@@ -133,6 +133,21 @@ export const SAFE_AI_INTENTS = [
   'identify_currency',
   'read_expiry',
   'help',
+  // Watch (the companion). The three read-only ones are trivially safe.
+  // `start_watch` is included because switching a protective mode ON is never
+  // the dangerous direction.
+  //
+  // `stop_watch` is deliberately NOT here, for the same reason
+  // `stop_safe_journey` is not: letting the model paraphrase its way into
+  // switching off a safety feature is exactly what this allow-list exists to
+  // prevent. "stop watching" is already matched deterministically at
+  // confidence 1, so the common phrasings still work — an unusual paraphrase
+  // falls through to "I am not sure what you asked", which is a far better
+  // failure than a model quietly disabling someone's hazard warnings.
+  'start_watch',
+  'watch_status',
+  'where_am_i_facing',
+  'watch_capabilities',
   // Not an app command: the model answers general knowledge / everyday
   // questions inline (parameters.answer) instead of leaving them "unknown".
   'general_question',

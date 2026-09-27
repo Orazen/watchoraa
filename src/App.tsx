@@ -38,6 +38,7 @@ import { HELP_MESSAGE } from './voice/voiceTypes';
 import type { VoiceBridge } from './VoiceFirstShell';
 import { LandingPage } from './LandingPage';
 import { VoiceFirstShell, createVoiceBridge, usePermissionService } from './VoiceFirstShell';
+import { matchDeterministicCommand } from './voice/deterministicCommands';
 import { getVoiceTestPhrase, getStepSpeech, getPhoneticFallback } from './voice/voicePhrases';
 
 import { AuthScreen } from './screens/AuthScreen';
@@ -49,9 +50,12 @@ import { SafeJourneyTab } from './screens/SafeJourneyTab';
 import { SettingsTab } from './screens/SettingsTab';
 import { AdminTab } from './screens/AdminTab';
 import type { Tone } from './screens/shared';
-import { Home, ScanEye, MapPin, Route, Siren, Users, HeartHandshake, Settings, Wrench, type LucideIcon } from 'lucide-react';
+import { Home, ScanEye, MapPin, Route, Siren, Users, HeartHandshake, Settings, Wrench, Watch, type LucideIcon } from 'lucide-react';
 import { buttonVariants } from './components/ui';
-type TabKey = 'home' | 'tracking' | 'routes' | 'journey' | 'sos' | 'community' | 'caregiver' | 'settings' | 'admin';
+import { useWatchMode } from './companion/useWatchMode';
+import { WatchScreen } from './companion/WatchScreen';
+import { capabilitySpeech } from './companion/mascotStates';
+type TabKey = 'home' | 'tracking' | 'routes' | 'journey' | 'watch' | 'sos' | 'community' | 'caregiver' | 'settings' | 'admin';
 
 type RecognitionLike = {
   lang: string;
@@ -70,6 +74,7 @@ const tabs: Array<{ key: TabKey; label: string; icon: LucideIcon; note: string }
   { key: 'tracking', label: 'Assist', icon: ScanEye, note: 'Camera + voice' },
   { key: 'routes', label: 'Places', icon: MapPin, note: 'Saved places' },
   { key: 'journey', label: 'Safe Journey', icon: Route, note: 'Safety monitoring' },
+  { key: 'watch', label: 'Watch', icon: Watch, note: 'Companion watches for you' },
   { key: 'sos', label: 'SOS', icon: Siren, note: 'Emergency' },
   { key: 'community', label: 'Community', icon: Users, note: 'Reports' },
   { key: 'caregiver', label: 'Caregiver', icon: HeartHandshake, note: 'People you support' },
@@ -559,6 +564,61 @@ function MainApp({
     speak(text, 2, `depth-${alert.zone}-${alert.level}`);
   }, [hapticSettings, speak]);
   const depthSafety = useDepthSafety(cameraActive && hazardLayerEnabled, onDepthAlert, hapticSettings);
+
+  // ── Watch mode ──
+  // The companion that watches the path and speaks when it changes. All the
+  // decisions live in the pure companion modules; this only hands the hook the
+  // live camera/hazard/mic state and the app's speech function.
+  const watchMode = useWatchMode({
+    speak,
+    hapticSettings,
+    getDetections: () => hazardState.detections,
+    getHazard: () => ({ active: hazardActive, label: hazardState.topHazard?.className ?? null }),
+    verbosity: voiceAssistant.settings.verbosity,
+    // Read through refs on every call: these flip on a timer, and the hook's
+    // own interval must never see a value captured at an earlier render.
+    getListening: () => voiceAssistant.state === 'listening',
+    getSpeaking: () => speechActiveCountRef.current > 0,
+    quietStartHour: 22,
+    quietEndHour: 6,
+  });
+
+  // PWA shortcut / deep-link entry points. The manifest ships three (Start
+  // Watch, What is ahead, Emergency) so a long-press on the home-screen icon
+  // goes straight to the thing a user needs mid-walk, rather than through the
+  // auth screen and the dashboard every time.
+  //
+  // The params are stripped from the URL immediately after being read. Without
+  // that, a reload — or the user hitting back — would re-trigger the action,
+  // and an emergency deep-link that re-fires on every refresh is worse than no
+  // shortcut at all.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (![...params.keys()].some((k) => k === 'watch' || k === 'ask' || k === 'tab')) return;
+
+    const tab = params.get('tab');
+    if (tab && tabs.some((t) => t.key === tab)) setActiveTab(tab as TabKey);
+    if (params.get('watch') === 'start') {
+      watchMode.start();
+      setCameraActive(true);
+      setActiveTab('watch');
+    }
+    const ask = params.get('ask');
+    if (ask) {
+      // Routed through the real command path so a shortcut and a spoken
+      // command are literally the same code — no second implementation to drift.
+      const matched = matchDeterministicCommand(ask);
+      // handleVoiceCommand is a hoisted function declaration, so calling it
+      // here is safe despite being defined further down this component.
+      if (matched) handleVoiceCommand(matched);
+    }
+
+    window.history.replaceState({}, '', window.location.pathname);
+    // Intentionally runs once: deep links are a launch-time concern.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     if (!cameraActive || !hazardLayerEnabled || depthSafety.status !== 'running') return;
     const t = setInterval(() => {
@@ -1280,6 +1340,34 @@ function MainApp({
         break;
       case 'help':
         speak(HELP_MESSAGE, 5, 'voice-help');
+        break;
+      // ── Watch (the companion) ──
+      // Every handler here claims only what it has actually done. "Start
+      // watch" switches Watch on AND opens the camera, because Watch without
+      // frames is a promise the companion cannot keep — announcing it while the
+      // camera is still off would be a false claim, which is the one thing
+      // this whole feature is built to avoid.
+      case 'start_watch':
+        watchMode.start();
+        tab('watch');
+        setCameraActive(true);
+        speak('Starting Watch. I am watching the path ahead and I will speak when something changes.', 4, 'voice-watch-start');
+        break;
+      case 'stop_watch':
+        watchMode.stop();
+        // The camera is left running: the hazard layer and the other camera
+        // features are independent of Watch, and turning it off would take
+        // away a protection the user never asked to lose.
+        speak('Watch is off. I am no longer watching the path ahead.', 4, 'voice-watch-stop');
+        break;
+      case 'watch_status':
+        speak(watchMode.statusSpeech(), 5, 'voice-watch-status');
+        break;
+      case 'where_am_i_facing':
+        watchMode.orientationSpeechNow();
+        break;
+      case 'watch_capabilities':
+        speak(capabilitySpeech(watchMode.capabilities), 5, 'voice-watch-caps');
         break;
       case 'where_am_i': {
         // Soundscape-pattern "my location": reverse geocode (road + area) plus
@@ -2308,6 +2396,16 @@ function MainApp({
             {activeTab === 'journey' && (
               <section role="tabpanel" id="panel-journey" aria-labelledby="tab-journey" className="tab-panel">
                 <SafeJourneyTab contacts={contacts} onNeedContacts={() => setActiveTab('sos')} announce={announce} speak={speak} permissionService={permissionService} />
+              </section>
+            )}
+            {activeTab === 'watch' && (
+              <section role="tabpanel" id="panel-watch" aria-labelledby="tab-watch" className="tab-panel">
+                <WatchScreen
+                  watch={watchMode}
+                  speak={speak}
+                  onOpenAssist={() => setCameraActive(true)}
+                  announce={announce}
+                />
               </section>
             )}
             {activeTab === 'sos' && (

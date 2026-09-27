@@ -43,6 +43,12 @@ export type VoiceIntentName =
   | 'find_thing'
   | 'reports_near'
   | 'follow_up'
+  /** Companion "Watch" mode — the mascot watches the path and guides. */
+  | 'start_watch'
+  | 'stop_watch'
+  | 'watch_status'
+  | 'where_am_i_facing'
+  | 'watch_capabilities'
   /** General knowledge / everyday question answered inline by the AI intent
    *  endpoint (parameters.answer) — not an app command. */
   | 'general_question'
@@ -115,7 +121,7 @@ export interface ConfirmationRequest {
 }
 
 export const HELP_MESSAGE =
-  'You can say: describe what is ahead, read this, what money is this, what color is this, read the expiry, scan the barcode, what time is it, find my keys, tell me more, start a safe journey, emergency, or open settings.';
+  'You can say: describe what is ahead, start watch, read this, what money is this, what color is this, read the expiry, scan the barcode, what time is it, which way am I facing, find my keys, tell me more, start a safe journey, emergency, or open settings.';
 
 /** Spoken once per session when hands-free voice control arms successfully. */
 export const HANDS_FREE_ONBOARDING =

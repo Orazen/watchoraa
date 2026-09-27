@@ -6,12 +6,37 @@
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
+  "display_override": [
+    "standalone",
+    "minimal-ui",
+    "browser"
+  ],
   "orientation": "portrait-primary",
   "background_color": "#ffffeb",
   "theme_color": "#1a1a1a",
   "categories": [
     "accessibility",
     "utilities"
+  ],
+  "shortcuts": [
+    {
+      "name": "Start Watch",
+      "short_name": "Watch",
+      "description": "Start the companion watching the path ahead.",
+      "url": "/?watch=start"
+    },
+    {
+      "name": "What is ahead",
+      "short_name": "Ahead",
+      "description": "Describe the path in front of you now.",
+      "url": "/?ask=what%20is%20ahead"
+    },
+    {
+      "name": "Emergency",
+      "short_name": "SOS",
+      "description": "Open the emergency screen.",
+      "url": "/?tab=sos"
+    }
   ],
   "icons": [
     {

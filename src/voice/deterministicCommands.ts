@@ -170,6 +170,27 @@ export function matchDeterministicCommand(transcript: string): VoiceIntent | nul
     return intent('describe_scene', { focus: 'door' }, false, 0.9);
   }
 
+  // ── Watch (the companion mascot) ──
+  // This block sits before Navigation because "which way am I facing" would
+  // otherwise be swallowed by the "which way is" distance rule, which answers
+  // with a walking distance the app cannot actually compute. A blind user
+  // asking which way they are turned deserves the real answer.
+  if (has(t, 'stop watch', 'stop watching', 'stop the watch', 'turn off watch', 'turn off watching', 'pause watch')) {
+    return intent('stop_watch', {}, false, 1);
+  }
+  if (has(t, 'start watch', 'start watching', 'start the watch', 'turn on watch', 'turn on watching', 'watch for me', 'watch the path', 'keep watch')) {
+    return intent('start_watch', {}, false, 1);
+  }
+  if (has(t, 'watch status', 'is watch on', 'is watching on', 'watch mode status', 'is watch mode on')) {
+    return intent('watch_status', {}, false, 1);
+  }
+  if (has(t, 'which way am i facing', 'which way am i looking', 'what direction am i facing', 'which direction am i facing', 'what way am i facing', 'which direction am i looking', 'am i facing north')) {
+    return intent('where_am_i_facing', {}, false, 1);
+  }
+  if (has(t, 'what can watch do', 'what does watch do', 'watch capabilities', 'what can this watch do')) {
+    return intent('watch_capabilities', {}, false, 1);
+  }
+
   // ── Navigation ──
   if (has(t, 'navigate to', 'take me to', 'go to', 'navigate')) {
     const dest = extractDestination(t);
