@@ -301,11 +301,20 @@ check(
 // deliberately and gets an immediate spoken acknowledgement, which is the
 // channel that matters here. The vibration assertion belongs on the mascot's
 // own state changes, which are involuntary and must be felt — checked below.
-// Drain the cold-start backlog first (see waitForQuietSpeech). The hazard
-// model download REPEATS its announcement, so the quiet window has to span
-// the repeat interval or it declares quiet in the gap and the next
-// announcement lands after the mark.
-await waitForQuietSpeech(15000, 180000);
+// Wait for the hazard model to actually finish downloading before tapping
+// cadence. Its warm-up announcement re-fires each time warm-up restarts
+// (App.tsx resets the spoken flag when the status leaves 'warming-up'), so
+// draining speech alone can declare quiet in the gap and the next
+// announcement lands after the mark. The visible status text is the honest
+// signal that loading is done.
+let modelReady = true;
+try {
+  await page.waitForFunction(() => !document.body.textContent.includes('Loading local detection model'), { timeout: 120000 });
+} catch {
+  modelReady = false;
+}
+check('hazard model finished loading before the cadence tap', modelReady, `ready=${modelReady}`);
+await waitForQuietSpeech(6000, 60000);
 const cadenceMark = await page.evaluate(() => window.allSaid().length);
 await page.evaluate(() => {
   const opts = [...document.querySelectorAll('#panel-watch [role="radio"]')];
@@ -320,11 +329,22 @@ try {
     { timeout: 40000 },
   );
 } catch { /* fall through: report whatever is there */ }
-cadenceSaid = await page.evaluate((n) => window.allSaid().slice(n).join(' | '), cadenceMark);
+// Read the whole session as well as the after-mark window. The confirmation
+// is spoken at priority 4 and lands FIRST, ahead of the cold-start backlog —
+// so on a busy load the line can be dispatched into the queue before the
+// array the mark counted has finished shifting. Only this tap can produce
+// "Watch is now in <x> mode", so the session-wide read stays honest.
+cadenceSaid = await page.evaluate(
+  (n) =>
+    window.allSaid().find((l) => /watch is now in \w+ mode/i.test(l))
+    ?? window.allSaid().slice(n).slice(-1)[0]
+    ?? '',
+  cadenceMark,
+);
 check(
   'selecting a cadence is confirmed in words',
   /watch is now in \w+ mode/i.test(cadenceSaid),
-  `after-mark="${cadenceSaid.slice(0, 160)}"`,
+  `said="${cadenceSaid.slice(0, 160)}"`,
 );
 
 // Every mascot state that means something carries a DISTINCT touch pattern,
