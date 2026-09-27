@@ -45,6 +45,15 @@ export const FREE_MODEL_PRESETS: Array<{
     keyHint: 'Create a free key at openrouter.ai/keys, then paste it below. The free vision model can be busy at peak times; the app retries automatically.',
   },
   {
+    id: 'openrouter-light',
+    label: 'OpenRouter — free, lightweight text (Llama 3.3 70B)',
+    provider: 'OPENAI_COMPATIBLE',
+    model: 'meta-llama/llama-3.3-70b-instruct:free',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    keyUrl: 'https://openrouter.ai/keys',
+    keyHint: 'One free OpenRouter key covers both OpenRouter presets. This :free text model is the lightweight pick for questions and commands — fast, no vision. Free models can be busy at peak times; the app retries automatically.',
+  },
+  {
     id: 'cerebras',
     label: 'Cerebras — free tier, fastest inference',
     provider: 'OPENAI_COMPATIBLE',
@@ -159,7 +168,9 @@ export function AiProviderSection({ announce, speak }: { announce: (message: str
     <div className="settings-section">
       <h3>AI provider</h3>
       <p className="settings-hint">
-        Bring your own AI. Jarvis, scene descriptions and answers will use your provider and key. The key is stored encrypted and is never read back or spoken.
+        Bring your own AI — your key always wins. Watchora uses YOUR provider and key first and only falls back to the
+        server's shared free model if you have none. Pick a free preset below (Groq, Gemini, OpenRouter, Cerebras all have
+        free tiers) and paste the key. The key is stored encrypted and is never read back or spoken.
       </p>
       <div className="settings-row">
         <span>Free preset</span>

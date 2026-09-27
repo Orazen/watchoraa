@@ -328,6 +328,12 @@ function MainApp({
   const analysisAbortRef = useRef<AbortController | null>(null);
   const ttsAudioRef = useRef<HTMLAudioElement | null>(null);
   const ttsUrlRef = useRef<string | null>(null);
+  // Neural-TTS cache: key `text|voice|rate` → object URL. The app repeats
+  // many phrases (help, confirmations, clock, error notices) and every uncached
+  // utterance costs a network round-trip and a rate-limit slot — the cache
+  // makes repeats instant, lighter, and immune to the TTS limiter.
+  const ttsCacheRef = useRef<Map<string, string>>(new Map());
+  const TTS_CACHE_MAX = 60;
   // Persistent, gesture-unlocked audio element. Created once; every TTS play
   // reuses it so the browser's autoplay policy never blocks playback after
   // the initial user gesture unlocked it.
@@ -376,57 +382,103 @@ function MainApp({
           const seq = ++speakSeqRef.current;
           const locale = localeFromVoice(voiceRef.current);
           const effectiveRate = customRate ?? voiceRateRef.current;
-          api
-            .ttsAudioUrl(t, voiceRef.current, effectiveRate)
-            .then((url) => {
-              if (seq !== speakSeqRef.current) {
-                URL.revokeObjectURL(url);
-                return;
+          const cacheKey = `${t}|${voiceRef.current}|${effectiveRate}`;
+
+          const playNeural = (url: string) => {
+            if (seq !== speakSeqRef.current) return;
+            ttsUrlRef.current = url;
+            const audio = getTtsElement();
+            audio.src = url;
+            ttsAudioRef.current = audio;
+            audio.playbackRate = 1.0;
+            // Recognition must pause while we talk: the mic would hear our
+            // own voice and could loop. Signal both edges here.
+            audio.onplay = () => setSpeechActive(true);
+            audio.onended = () => {
+              if (ttsAudioRef.current === audio) ttsAudioRef.current = null;
+              if (ttsUrlRef.current) {
+                // A cached URL stays alive for the next replay of the same
+                // phrase — revoking it here would break the cache hit.
+                if (![...ttsCacheRef.current.values()].includes(ttsUrlRef.current)) {
+                  URL.revokeObjectURL(ttsUrlRef.current);
+                }
+                ttsUrlRef.current = null;
               }
-              ttsUrlRef.current = url;
-              const audio = getTtsElement();
-              audio.src = url;
-              ttsAudioRef.current = audio;
-              audio.playbackRate = 1.0;
-              // Recognition must pause while we talk: the mic would hear our
-              // own voice and could loop. Signal both edges here.
-              audio.onplay = () => setSpeechActive(true);
-              audio.onended = () => {
-                if (ttsAudioRef.current === audio) ttsAudioRef.current = null;
-                if (ttsUrlRef.current) {
-                  URL.revokeObjectURL(ttsUrlRef.current);
-                  ttsUrlRef.current = null;
-                }
-                setSpeechActive(false);
-                fallbackSpeak(t, locale, effectiveRate);
-                speechManagerRef.current?.onEnded();
-              };
-              audio.onerror = () => {
-                if (ttsAudioRef.current === audio) ttsAudioRef.current = null;
-                if (ttsUrlRef.current) {
-                  URL.revokeObjectURL(ttsUrlRef.current);
-                  ttsUrlRef.current = null;
-                }
-                setSpeechActive(false);
-                fallbackSpeak(t, locale, effectiveRate);
-                speechManagerRef.current?.onEnded();
-              };
-              audio.play().catch(() => {
-                if (ttsAudioRef.current === audio) ttsAudioRef.current = null;
-                if (ttsUrlRef.current) {
-                  URL.revokeObjectURL(ttsUrlRef.current);
-                  ttsUrlRef.current = null;
-                }
-                fallbackSpeak(t, locale, effectiveRate);
-                setSpeechActive(false);
-                speechManagerRef.current?.onEnded();
-              });
-            })
-            .catch(() => {
-              if (seq !== speakSeqRef.current) return;
+              setSpeechActive(false);
+              // Fall back to the browser voice ONLY when the neural clip
+              // produced no audible playback: some embedded browsers "play"
+              // silently and still fire ended with currentTime at 0. On
+              // devices that actually played the clip this used to repeat
+              // the whole sentence through the robotic speechSynthesis
+              // voice right after the natural one — the "robot voice" a
+              // user hears as the app talking twice.
+              if (audio.currentTime < 0.05) fallbackSpeak(t, locale, effectiveRate);
+              speechManagerRef.current?.onEnded();
+            };
+            audio.onerror = () => {
+              if (ttsAudioRef.current === audio) ttsAudioRef.current = null;
+              if (ttsUrlRef.current) {
+                URL.revokeObjectURL(ttsUrlRef.current);
+                ttsUrlRef.current = null;
+              }
+              setSpeechActive(false);
               fallbackSpeak(t, locale, effectiveRate);
               speechManagerRef.current?.onEnded();
+            };
+            audio.play().catch(() => {
+              if (ttsAudioRef.current === audio) ttsAudioRef.current = null;
+              if (ttsUrlRef.current) {
+                URL.revokeObjectURL(ttsUrlRef.current);
+                ttsUrlRef.current = null;
+              }
+              fallbackSpeak(t, locale, effectiveRate);
+              setSpeechActive(false);
+              speechManagerRef.current?.onEnded();
             });
+          };
+
+          const cached = ttsCacheRef.current.get(cacheKey);
+          if (cached) {
+            playNeural(cached);
+            return;
+          }
+
+          const fetchNeural = (attempt: number) => {
+            api
+              .ttsAudioUrl(t, voiceRef.current, effectiveRate)
+              .then((url) => {
+                if (seq !== speakSeqRef.current) {
+                  URL.revokeObjectURL(url);
+                  return;
+                }
+                // Own the URL by the cache so replays never re-fetch.
+                ttsCacheRef.current.set(cacheKey, url);
+                if (ttsCacheRef.current.size > TTS_CACHE_MAX) {
+                  const oldestKey = ttsCacheRef.current.keys().next().value;
+                  const oldestUrl = oldestKey !== undefined ? ttsCacheRef.current.get(oldestKey) : undefined;
+                  if (oldestKey !== undefined) ttsCacheRef.current.delete(oldestKey);
+                  if (oldestUrl && oldestUrl !== ttsUrlRef.current) URL.revokeObjectURL(oldestUrl);
+                }
+                playNeural(url);
+              })
+              .catch((err) => {
+                if (seq !== speakSeqRef.current) return;
+                // A 429 is transient (the limiter window resets in seconds) —
+                // one quick retry keeps the user on the natural voice instead
+                // of dropping to the robotic fallback on a busy moment.
+                const status = err instanceof ApiError ? err.status : undefined;
+                if (status === 429 && attempt === 0) {
+                  setTimeout(() => {
+                    if (seq !== speakSeqRef.current) return;
+                    fetchNeural(1);
+                  }, 1500);
+                  return;
+                }
+                fallbackSpeak(t, locale, effectiveRate);
+                speechManagerRef.current?.onEnded();
+              });
+          };
+          fetchNeural(0);
         },
         stop: () => stopSpeaking(),
         verbosity: voiceAssistant.settings.verbosity,
