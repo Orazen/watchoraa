@@ -13,6 +13,7 @@
     "server:seed": "npm --prefix server run seed",
     "test": "vitest run",
     "test:watch": "vitest",
+    "tauri": "tauri",
     "native:check": "node scripts/build-native.mjs check",
     "native": "node scripts/build-native.mjs tauri",
     "native:dev": "node scripts/build-native.mjs tauri dev",
