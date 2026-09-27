@@ -156,10 +156,18 @@ export interface MascotTransition {
  *     (looking, guiding) are felt but not narrated, so the companion is
  *     present without being a commentator.
  */
+/** The two modes: asleep (Watch off) and awake (Watch on). Every other state
+ * is a transient expression of being awake. */
+export type MascotMode = 'asleep' | 'awake';
+
+export function modeOf(state: MascotState): MascotMode {
+  return state === 'asleep' ? 'asleep' : 'awake';
+}
+
 export function mascotTransition(
   from: MascotState | null,
   to: MascotState,
-  options: { quietHours?: boolean } = {},
+  options: { quietHours?: boolean; announcedMode?: MascotMode } = {},
 ): MascotTransition {
   const profile = MASCOT_PROFILES[to];
   const changed = from !== to;
@@ -173,8 +181,18 @@ export function mascotTransition(
   // The two MODE states speak too: a user who cannot see the screen must be
   // told when watching started and, just as importantly, when it stopped —
   // silence on stop leaves them believing they are still being watched.
-  const modeChange = to === 'awake' || to === 'asleep';
-  const mustSpeak = profile.interrupts || modeChange;
+  //
+  // But a MODE announcement is owed only when the MODE actually changed. The
+  // mascot drifts awake -> guiding -> awake as it speaks, and without this
+  // guard every return to awake repeated "I am watching the path ahead for
+  // you" — the nagging the cadence rules exist to prevent, and unbearable to
+  // someone who cannot see that nothing has changed. `announcedMode` is the
+  // mode last announced; when it is omitted the transition speaks, which
+  // preserves the old behaviour for callers that do not track it.
+  const mode = modeOf(to);
+  const announcedMode = options.announcedMode;
+  const modeChanged = announcedMode === undefined || announcedMode !== mode;
+  const mustSpeak = profile.interrupts || modeChanged;
   const announce = mustSpeak && !(quiet && !profile.interrupts) ? profile.announce : '';
 
   return {

@@ -28,6 +28,7 @@ import {
 import {
   MASCOT_PROFILES,
   mascotTransition,
+  modeOf,
   capabilitySpeech,
   type MascotState,
 } from '../companion/mascotStates';
@@ -449,6 +450,33 @@ describe('mascot — every state is felt, not only seen', () => {
   it('feels but does not narrate the transient working states', () => {
     expect(mascotTransition('awake', 'looking').announce).toBe('');
     expect(mascotTransition('looking', 'guiding').announce).toBe('');
+  });
+
+  it('does NOT re-announce the mode when the mascot drifts back to awake', () => {
+    // The regression: the mascot oscillates awake -> guiding -> awake as it
+    // speaks. Without the announcedMode guard, every return to awake repeated
+    // "I am watching the path ahead for you" — a nag the cadence rules exist
+    // to prevent, spoken to someone who cannot see that nothing changed.
+    const awayAndBack = mascotTransition('guiding', 'awake', { announcedMode: 'awake' });
+    expect(awayAndBack.announce).toBe('');
+
+    // The first entry into the mode still speaks, and so does leaving it.
+    expect(mascotTransition('asleep', 'awake', { announcedMode: 'asleep' }).announce).toContain('watching');
+    expect(mascotTransition('guiding', 'asleep', { announcedMode: 'awake' }).announce).toContain('off');
+  });
+
+  it('still interrupts on a hazard even when the mode has not changed', () => {
+    const t = mascotTransition('guiding', 'alert', { announcedMode: 'awake' });
+    expect(t.announce).not.toBe('');
+    expect(t.interrupts).toBe(true);
+    expect(t.priority).toBe(1);
+  });
+
+  it('classifies every mascot state into a mode', () => {
+    expect(modeOf('asleep')).toBe('asleep');
+    for (const s of ['awake', 'listening', 'looking', 'guiding', 'alert', 'unavailable'] as const) {
+      expect(modeOf(s)).toBe('awake');
+    }
   });
 
   it('breaks silence for a hazard at the top priority', () => {

@@ -19,7 +19,7 @@ import { fireTouchPattern, type HapticSettings } from '../haptics';
 import type { Detection } from '../yolo.worker';
 import { decideWatchAction, sceneKey, watchStatusSpeech, type WatchCadence, type WatchState } from './watchSession';
 import { CompassStabiliser, isLookingDown, readOrientation, orientationSpeech, type HeadingReading } from './orientation';
-import { MASCOT_PROFILES, mascotTransition, type MascotState } from './mascotStates';
+import { MASCOT_PROFILES, mascotTransition, modeOf, type MascotState } from './mascotStates';
 
 /** How often the pure decision function is evaluated. Cheap; no I/O. */
 const TICK_MS = 1500;
@@ -108,6 +108,13 @@ export function useWatchMode(options: UseWatchModeOptions): WatchModeApi {
   const spokenCountRef = useRef(0);
   const stabiliserRef = useRef(new CompassStabiliser());
   const hasOrientationRef = useRef(false);
+  // Which mode the mascot is in, independent of its transient expression.
+  // Tracked separately so an awake <-> guiding flip cannot re-announce
+  // "I am watching the path ahead" every time it comes back round.
+  const announcedModeRef = useRef<'asleep' | 'awake'>('asleep');
+  // Hysteresis for the transient states, so a speech flag that flickers for a
+  // single 1.5s tick does not buzz the phone twice.
+  const pendingMascotRef = useRef<{ state: MascotState; seen: number } | null>(null);
 
   // ── Battery ──
   useEffect(() => {
@@ -163,8 +170,10 @@ export function useWatchMode(options: UseWatchModeOptions): WatchModeApi {
     if (mascotRef.current === next) return;
     const transition = mascotTransition(mascotRef.current, next, {
       quietHours: isQuietHour(optsRef.current.quietStartHour, optsRef.current.quietEndHour),
+      announcedMode: announcedModeRef.current,
     });
     mascotRef.current = next;
+    announcedModeRef.current = modeOf(next);
     setMascotState(next);
     if (transition.touch) fireTouchPattern(transition.touch, optsRef.current.hapticSettings);
     if (transition.announce) {
@@ -184,10 +193,35 @@ export function useWatchMode(options: UseWatchModeOptions): WatchModeApi {
       const lookingDown = isLookingDown(reading);
 
       // The mascot reflects what the machine is actually doing right now.
-      if (hazard.active) setMascot('alert');
-      else if (o.getSpeaking()) setMascot('guiding');
-      else if (o.getListening()) setMascot('listening');
-      else setMascot('awake');
+      // `alert` is immediate — a hazard must never wait for hysteresis. The
+      // ambient states (guiding/listening/awake) must hold steady for two
+      // consecutive ticks before they are believed: the speech-active flag
+      // flickers as the queue drains, and without this the phone buzzed every
+      // 1.5s, which for a user relying on touch is noise, not information.
+      const desired: MascotState = hazard.active
+        ? 'alert'
+        : o.getSpeaking()
+          ? 'guiding'
+          : o.getListening()
+            ? 'listening'
+            : 'awake';
+      if (desired === mascotRef.current) {
+        pendingMascotRef.current = null;
+      } else if (desired === 'alert') {
+        pendingMascotRef.current = null;
+        setMascot('alert');
+      } else {
+        const pending = pendingMascotRef.current;
+        if (pending && pending.state === desired) {
+          pending.seen += 1;
+        } else {
+          pendingMascotRef.current = { state: desired, seen: 1 };
+        }
+        if ((pendingMascotRef.current?.seen ?? 0) >= 2) {
+          pendingMascotRef.current = null;
+          setMascot(desired);
+        }
+      }
 
       const action = decideWatchAction({
         state: 'watching',

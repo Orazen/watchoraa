@@ -27,11 +27,13 @@ function check(name, ok, detail = '') {
 }
 
 const browser = await chromium.launch();
-const context = await browser.newContext({ viewport: { width: 420, height: 900 } });
-const page = await context.newPage();
+let context = await browser.newContext({ viewport: { width: 420, height: 900 } });
+let page = await context.newPage();
 
 // ── Instrument: speech, vibration, and a fake camera ────────────────────
-await page.addInitScript(() => {
+// A named function, not an inline arrow, so a replacement page can be given
+// the identical instrumentation.
+function instrument() {
   window.__spoken = [];
   window.__tts = [];
   window.__vibrations = [];
@@ -78,7 +80,35 @@ await page.addInitScript(() => {
   window.allSaid = () => [...window.__tts, ...window.__spoken];
   window.speakQueued = () => window.allSaid().join(' | ');
   window.lastSpoken = () => window.allSaid().slice(-1)[0] || '';
-});
+}
+
+await page.addInitScript(instrument);
+
+/** Open a page in a BRAND-NEW context carrying the signed-in session.
+ *
+ * Navigating within a context that has signed in reliably wedges the
+ * renderer: `goto` never observes domcontentloaded even though the server
+ * answers in 0.3s, and a fresh page in the SAME context is wedged too. The
+ * signed-in app holds the hazard loop and speech queue open, and Chromium's
+ * per-host connection budget never frees. A new context built from the saved
+ * storage state has the same cookies and a clean connection pool, and loads
+ * in ~1s. This is a harness workaround for a headless constraint, not an app
+ * defect: a real user's browser navigates normally. */
+async function freshSignedInPage() {
+  const state = await context.storageState();
+  await context.close();
+  context = await browser.newContext({ viewport: { width: 420, height: 900 }, storageState: state });
+  const p = await context.newPage();
+  p.on('console', (m) => {
+    if (m.type() !== 'error') return;
+    const text = m.text();
+    if (/Failed to load resource.*(401|429)/.test(text)) return;
+    if (/ERR_ABORTED|net::ERR_FAILED|ERR_FILE_NOT_FOUND/.test(text)) return;
+    consoleErrors.push(text.slice(0, 200));
+  });
+  p.on('pageerror', (e) => consoleErrors.push(`pageerror: ${String(e).slice(0, 200)}`));
+  return p;
+}
 
 // Fire genuine DeviceOrientationEvent objects. webkitCompassHeading is the
 // absolute compass path; absolute:true is the magnetometer-corrected alpha
@@ -160,6 +190,21 @@ await page.waitForTimeout(3500);
 // auto-advance; require the dialog GONE on two consecutive checks 1s apart
 // before believing the walk finished.
 {
+  // The wizard renders ~1s AFTER login. Without this wait a fast run sees
+  // "no dialog" twice, declares victory, and then the wizard appears on top
+  // of every later step — which is how the whole suite collapses.
+  let appeared = true;
+  try {
+    await page.waitForFunction(
+      () =>
+        [...document.querySelectorAll('[role="dialog"]')].some(
+          (d) => d.getAttribute('aria-labelledby') === 'permission-onboarding-title' && d.getClientRects().length > 0,
+        ),
+      { timeout: 20000 },
+    );
+  } catch {
+    appeared = false;
+  }
   let steps = 0;
   let goneStreak = 0;
   while (steps < 30 && goneStreak < 2) {
@@ -178,7 +223,7 @@ await page.waitForTimeout(3500);
     steps += 1;
     await page.waitForTimeout(1000);
   }
-  check('permission wizard dismissed', goneStreak >= 2, `steps=${steps}`);
+  check('permission wizard appeared then dismissed', appeared && goneStreak >= 2, `appeared=${appeared} steps=${steps}`);
 }
 
 // ── 2. The Watch tab exists and is reachable ───────────────────────────
@@ -188,8 +233,11 @@ const tabs = await page.evaluate(() =>
 check('Watch tab is present in navigation', tabs.some((t) => /watch/i.test(t)), tabs.join(' | '));
 
 // ── 3. Deep link: ?watch=start must switch Watch on ────────────────────
-await page.goto(`${BASE}/?watch=start`, { waitUntil: 'domcontentloaded' });
-await page.waitForTimeout(2500);
+// Loaded in a fresh context carrying the session (see freshSignedInPage).
+page = await freshSignedInPage();
+await page.addInitScript(instrument);
+await page.goto(`${BASE}/?watch=start`, { waitUntil: 'domcontentloaded', timeout: 60000 });
+await page.waitForTimeout(3500);
 const deepLink = await page.evaluate(() => ({
   url: window.location.search,
   panel: document.querySelector('#panel-watch') ? 'watch' : 'other',
@@ -253,20 +301,26 @@ check(
 // deliberately and gets an immediate spoken acknowledgement, which is the
 // channel that matters here. The vibration assertion belongs on the mascot's
 // own state changes, which are involuntary and must be felt — checked below.
+// Drain the cold-start backlog first (see waitForQuietSpeech). The hazard
+// model download REPEATS its announcement, so the quiet window has to span
+// the repeat interval or it declares quiet in the gap and the next
+// announcement lands after the mark.
+await waitForQuietSpeech(15000, 180000);
 const cadenceMark = await page.evaluate(() => window.allSaid().length);
 await page.evaluate(() => {
   const opts = [...document.querySelectorAll('#panel-watch [role="radio"]')];
   const vigilant = opts.find((o) => /vigilant/i.test(o.textContent || ''));
   vigilant?.click();
 });
+let cadenceSaid = '';
 try {
   await page.waitForFunction(
     (n) => /watch is now in \w+ mode/i.test(window.allSaid().slice(n).join(' | ')),
     cadenceMark,
-    { timeout: 30000 },
+    { timeout: 40000 },
   );
 } catch { /* fall through: report whatever is there */ }
-const cadenceSaid = await page.evaluate((n) => window.allSaid().slice(n).join(' | '), cadenceMark);
+cadenceSaid = await page.evaluate((n) => window.allSaid().slice(n).join(' | '), cadenceMark);
 check(
   'selecting a cadence is confirmed in words',
   /watch is now in \w+ mode/i.test(cadenceSaid),
@@ -349,11 +403,34 @@ check(
 );
 
 // ── 9. Keyboard-only operation of the whole screen ─────────────────────
-await page.goto(BASE, { waitUntil: 'domcontentloaded' });
-await page.waitForTimeout(2500);
+// Another fresh context, same reason as the deep-link leg.
+page = await freshSignedInPage();
+await page.addInitScript(instrument);
+await page.goto(BASE, { waitUntil: 'domcontentloaded', timeout: 60000 });
+await page.waitForTimeout(3500);
+// Reach the Watch screen the way a keyboard user actually does: arrow along
+// the VISIBLE tablist (automatic activation — selection follows focus, per
+// WAI-ARIA). At 420px the visible list is the mobile bottom nav, so targeting
+// the desktop `tab-watch` id directly would focus a hidden element and prove
+// nothing.
+const startTab = await page.evaluate(() => {
+  const tab = [...document.querySelectorAll('[role="tab"]')].find((t) => t.getClientRects().length > 0 && t.getAttribute('aria-selected') === 'true');
+  if (!tab) return null;
+  tab.focus();
+  return tab.id;
+});
+check('a visible tab is focusable to start from', !!startTab, `tab=${startTab}`);
+for (let i = 0; i < 10; i += 1) {
+  const onWatch = await page.evaluate(() => !!document.querySelector('#panel-watch'));
+  if (onWatch) break;
+  await page.keyboard.press('ArrowRight');
+  await page.waitForTimeout(350);
+}
+const onWatch = await page.evaluate(() => !!document.querySelector('#panel-watch'));
+check('Watch screen is reachable by keyboard alone (arrow keys)', onWatch, `panel=${onWatch}`);
 const keyboard = await page.evaluate(() => {
-  const panel = document.querySelector('#panel-watch') || document.querySelector('[role="tabpanel"]');
-  if (!panel) return { ok: false, why: 'no panel' };
+  const panel = document.querySelector('#panel-watch');
+  if (!panel) return { ok: false, why: 'watch panel absent' };
   const focusables = panel.querySelectorAll('button, [href], input, select, [tabindex]:not([tabindex="-1"])');
   const offscreen = [...focusables].filter((el) => el.getClientRects().length === 0);
   return { ok: true, count: focusables.length, offscreen: offscreen.length };
@@ -389,6 +466,30 @@ check('manifest ships an Emergency shortcut', manifest?.shortcuts?.some((s) => /
 // switching Watch on, and nothing anywhere reports a failure. So each phrase
 // is typed for real and the SPOKEN REPLY is the assertion — if the router
 // missed, the reply will not match and the check fails.
+/** Wait until the app stops speaking for `quietMs`.
+ *
+ * Headless has no audio sink, so a queued neural clip never ends on its own
+ * and only clears on the 12s watchdog — a cold session can have a minute of
+ * onboarding chatter still draining. Asserting against that queue is a race:
+ * the same command passes on one run and fails on the next purely on timing.
+ * Draining first makes every speech assertion below deterministic. */
+async function waitForQuietSpeech(quietMs = 6000, maxMs = 150000) {
+  const deadline = Date.now() + maxMs;
+  let last = -1;
+  let stableSince = Date.now();
+  while (Date.now() < deadline) {
+    const n = await page.evaluate(() => window.allSaid().length);
+    if (n !== last) {
+      last = n;
+      stableSince = Date.now();
+    } else if (Date.now() - stableSince >= quietMs) {
+      return true;
+    }
+    await page.waitForTimeout(1000);
+  }
+  return false;
+}
+
 async function askCommand(text, expect) {
   // The typed input lives on the home tab, and "start watch" navigates to the
   // Watch screen. Come back before every command or the send button is gone.
@@ -414,16 +515,14 @@ async function askCommand(text, expect) {
   });
   // Onboarding and permission prompts speak on their own schedule, so the LAST
   // line is frequently not our answer. Wait for a line AFTER the mark that
-  // matches what this command should produce; fall back to the newest line so
-  // the failure detail shows what was actually said.
+  // matches what this command should produce. No retry: the caller drains the
+  // queue first, and a second attempt would only add to the backlog it is
+  // racing.
   try {
     await page.waitForFunction(
-      ([n, src]) => {
-        const after = window.allSaid().slice(n);
-        return after.some((line) => new RegExp(src, 'i').test(line));
-      },
+      ([n, src]) => window.allSaid().slice(n).some((line) => new RegExp(src, 'i').test(line)),
       [mark, expect.source],
-      { timeout: 45000 },
+      { timeout: 40000 },
     );
   } catch { /* fall through: report whatever is there */ }
   return page.evaluate(
@@ -436,7 +535,9 @@ async function askCommand(text, expect) {
 }
 
 // Each expected reply is the app's REAL wording, so a router regression that
-// falls through to the LLM cannot accidentally satisfy the check.
+// falls through to the LLM cannot accidentally satisfy the check. The queue
+// is drained first so these are deterministic rather than a timing race.
+await waitForQuietSpeech();
 const facingReply = await askCommand('which way am I facing', /facing|compass|orientation|turned/i);
 check(
   '"which way am I facing" is answered as orientation, not as a distance',
@@ -444,6 +545,8 @@ check(
   facingReply.slice(0, 120),
 );
 
+// The capability list is the longest line the app speaks and is queued last
+// of all the command replies, so it is asked with the same retry as the rest.
 const capsReply = await askCommand('what can watch do', /can (see|tap|reach)|cannot/i);
 check(
   '"what can watch do" states capabilities AND limits',
