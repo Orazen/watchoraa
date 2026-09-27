@@ -188,19 +188,32 @@ jobs:
 
       # A bundle with no camera or microphone usage description is terminated by
       # macOS the first time it touches either, with no prompt and no error. CI
-      # cannot run a macOS GUI app, but it can read the Info.plist that Tauri
-      # generates, which is where that string has to be.
-      - name: The macOS Info.plist carries the usage strings
+      # cannot run a macOS GUI app, but it CAN read the Info.plist that Tauri
+      # merges, and that is where the string has to be.
+      #
+      # Parsed with python's plistlib rather than /usr/libexec/PlistBuddy: this
+      # job runs on ubuntu, where PlistBuddy does not exist, and a macOS-only
+      # tool in a Linux job fails on the check itself rather than on the thing
+      # being checked.
+      - name: The Info.plist carries the camera and mic usage strings
         run: |
           set -euo pipefail
-          PLIST=src-tauri/Info.plist
-          for key in NSCameraUsageDescription NSMicrophoneUsageDescription; do
-            if ! /usr/libexec/PlistBuddy -c "Print :$key" "$PLIST" >/dev/null 2>&1; then
-              echo "✗ $PLIST is missing $key — macOS kills the app on first camera/mic use"
-              exit 1
-            fi
-            echo "✓ $key present"
-          done
+          python3 - <<'PY'
+          import plistlib, sys
+          with open('src-tauri/Info.plist', 'rb') as f:
+              plist = plistlib.load(f)
+          missing = [
+              k for k in ('NSCameraUsageDescription', 'NSMicrophoneUsageDescription')
+              if not plist.get(k, '').strip()
+          ]
+          if missing:
+              sys.exit(
+                  '✗ Info.plist is missing: ' + ', '.join(missing) +
+                  ' — macOS kills the app on first camera/mic use, with no prompt'
+              )
+          for k in ('NSCameraUsageDescription', 'NSMicrophoneUsageDescription'):
+              print(f'✓ {k} present ({len(plist[k])} chars)')
+          PY
 
   android:
     name: Android (debug APK)
@@ -221,6 +234,11 @@ jobs:
 
       - uses: nttld/setup-ndk@v1
         id: ndk
+        with:
+          # Required: the action fails with "versionSpec parameter is required"
+          # when this is omitted. 27 is what the Rust android targets and AGP 8
+          # in this project are built against.
+          ndk-version: '27'
 
       # The Java 17 that AGP 8 requires. The runner's default JDK is newer and
       # Gradle fails with an unhelpful "compileSdk" error.

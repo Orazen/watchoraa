@@ -6,8 +6,14 @@ import type { Express } from 'express';
 // middleware answers before any route or Prisma client is reached. That is the
 // point — this file must be runnable in a bare CI job.
 process.env.DATABASE_URL ||= 'postgresql://cors@localhost:5432/blindnav';
-process.env.CORS_ORIGIN ||= 'https://watchora.ramagiritharun.in';
 process.env.JWT_SECRET ||= 'test-secret-at-least-16-chars';
+
+// The configured web origin, whatever the environment says. Hard-coding one
+// here is wrong: CI exports CORS_ORIGIN=http://127.0.0.1:4173, so `||=` never
+// takes effect and a literal would test a host the server was never told about.
+const WEB_ORIGIN = (process.env.CORS_ORIGIN ||= 'https://watchora.ramagiritharun.in')
+  .split(',')[0]
+  .trim();
 
 let app: Express;
 
@@ -45,8 +51,8 @@ describe('CORS for the native app', () => {
   });
 
   it('allows the configured web origin', async () => {
-    const res = await preflight('https://watchora.ramagiritharun.in');
-    expect(res.headers['access-control-allow-origin']).toBe('https://watchora.ramagiritharun.in');
+    const res = await preflight(WEB_ORIGIN);
+    expect(res.headers['access-control-allow-origin']).toBe(WEB_ORIGIN);
   });
 
   it('allows the native origin on the media routes the mascot depends on', async () => {
