@@ -237,27 +237,34 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - uses: android-actions/setup-android@v3
-
-      # Deliberately NOT pinning an NDK version. nttld/setup-ndk wants a full
-      # version string, and a guessed one 404s ("Attempting to download 27...
-      # Unexpected HTTP response: 404"). The version also moves with the runner
-      # image, so any hard-coded value is a time bomb. The ubuntu images ship a
-      # working NDK; use the one that is actually present.
+      # Deliberately NOT using android-actions/setup-android. It fails on this
+      # runner image — its bundled sdkmanager (cmdline-tools/16.0) exits 1
+      # during "Computing updates" — and the ubuntu images already ship a
+      # working SDK, NDK and build-tools, so the action buys nothing here.
+      #
+      # Also not pinning an NDK version: nttld/setup-ndk wants a full version
+      # string and a guessed one 404s ("Unexpected HTTP response: 404"), while
+      # the version on the image moves over time. Discover it instead.
       - name: Locate the NDK this runner ships
         id: ndk
         run: |
           set -euo pipefail
           SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          if [ ! -d "$SDK" ]; then
+            echo "✗ ANDROID_HOME=$SDK does not exist on this runner image" >&2
+            exit 1
+          fi
           for c in "${ANDROID_NDK_ROOT:-}" "${ANDROID_NDK_HOME:-}" "$SDK"/ndk/*; do
             if [ -n "$c" ] && [ -d "$c" ]; then
               echo "path=$c" >> "$GITHUB_OUTPUT"
               echo "version=$(basename "$c")" >> "$GITHUB_OUTPUT"
+              echo "✓ SDK $SDK"
               echo "✓ using NDK $c"
+              ls -d "$SDK"/build-tools/* 2>/dev/null | sed 's/^/  build-tools: /' || true
               exit 0
             fi
           done
-          echo "✗ no NDK on this runner image. Add an explicit sdkmanager install:" >&2
+          echo "✗ no NDK under $SDK/ndk. Install one with:" >&2
           echo "    sdkmanager 'ndk;27.2.12479018'" >&2
           exit 1
 

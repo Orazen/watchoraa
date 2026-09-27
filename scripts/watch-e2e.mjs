@@ -164,6 +164,30 @@ async function typeInto(page, selector, text) {
   );
 }
 
+/**
+ * Send a CORS preflight for `origin` and report what the server allowed.
+ *
+ * Must run in Node, not in the page: `Origin` is a forbidden header name, so
+ * a browser always replaces whatever a script sets it to. Asking from the page
+ * silently tests the page's own origin every time and cannot fail, which is
+ * exactly the failure mode this function exists to avoid.
+ */
+async function preflightAllowOrigin(base, origin) {
+  try {
+    const res = await fetch(`${base}/api/auth/login`, {
+      method: 'OPTIONS',
+      headers: {
+        Origin: origin,
+        'Access-Control-Request-Method': 'POST',
+        'Access-Control-Request-Headers': 'content-type',
+      },
+    });
+    return res.headers.get('access-control-allow-origin') ?? '(absent)';
+  } catch (e) {
+    return `error: ${String(e).slice(0, 80)}`;
+  }
+}
+
 // ── 1. Load, sign up, and clear the permission wizard ───────────────────
 const EMAIL = `e2e-watch-${Date.now()}@example.com`;
 await page.goto(BASE, { waitUntil: 'load', timeout: 45000 });
@@ -485,45 +509,26 @@ check('manifest ships an Emergency shortcut', manifest?.shortcuts?.some((s) => /
 // can see whether it is correct. The Tauri desktop and mobile app is the
 // opposite: its webview origin is an asset origin, so EVERY request is
 // cross-origin. If the allowlist is missing those origins the preflight
-// returns 204 with no Access-Control-Allow-Origin, the browser discards the
+// returns 204 with no Access-Control-Allow-Origin, the browser blocks the
 // response, and the app fails exactly as though the server were down — sign-in
 // does nothing and the mascot has nothing to say.
 //
-// So this asserts the headers on live production. It is the only check here
-// that can catch that class of bug.
+// This runs OUTSIDE the browser, in Node, and that is not a stylistic choice.
+// `Origin` is a forbidden header name: a page CANNOT set it, so a fetch() from
+// page.evaluate() always sends the page's own origin no matter what you put in
+// the headers object. An earlier version of this check did exactly that and
+// "passed" every origin as the website — including the evil.example case it was
+// supposed to prove was refused. Node's fetch can set Origin, so it goes here.
 const NATIVE_ORIGINS = [
   ['macOS/Linux webview', 'tauri://localhost'],
   ['Windows/Android webview', 'https://tauri.localhost'],
 ];
 for (const [label, origin] of NATIVE_ORIGINS) {
-  const acao = await page.evaluate(async ([o]) => {
-    try {
-      // A preflight, not the request itself: a failed preflight blocks the real
-      // request, and sending a real auth request from an unknown origin would
-      // burn a rate-limit slot for no information.
-      const res = await fetch('/api/auth/login', {
-        method: 'OPTIONS',
-        headers: {
-          Origin: o,
-          'Access-Control-Request-Method': 'POST',
-          'Access-Control-Request-Headers': 'content-type',
-        },
-      });
-      return res.headers.get('access-control-allow-origin') ?? '(absent)';
-    } catch (e) {
-      return `error: ${String(e).slice(0, 80)}`;
-    }
-  }, [origin]);
+  const acao = await preflightAllowOrigin(BASE, origin);
   check(`CORS allows the ${label} origin`, acao === origin, `allow-origin=${acao}`);
 }
 
-const evil = await page.evaluate(async () => {
-  const res = await fetch('/api/auth/login', {
-    method: 'OPTIONS',
-    headers: { Origin: 'https://evil.example', 'Access-Control-Request-Method': 'POST' },
-  });
-  return res.headers.get('access-control-allow-origin') ?? '(absent)';
-});
+const evil = await preflightAllowOrigin(BASE, 'https://evil.example');
 // The allowlist is the security boundary. Reflecting any origin would hand
 // every visitor's tokens to a phishing page, so a fix for the two checks above
 // must not become "allow everything".
