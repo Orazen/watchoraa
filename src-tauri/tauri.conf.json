@@ -1,0 +1,57 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Watchora",
+  "version": "1.0.0",
+  "identifier": "in.ramagiritharun.watchora",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:5173",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "title": "Watchora",
+        "width": 1280,
+        "height": 860,
+        "minWidth": 360,
+        "minHeight": 640,
+        "resizable": true,
+        "fullscreen": false,
+        "dragDropEnabled": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost data: blob: https:; media-src 'self' asset: http://asset.localhost blob: data: mediastream:; connect-src 'self' ipc: http://ipc.localhost https://watchora.ramagiritharun.in wss://watchora.ramagiritharun.in; worker-src 'self' blob:; script-src 'self' 'wasm-unsafe-eval' blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; frame-src 'self' blob: https://tile.openstreetmap.org; child-src 'self' blob:",
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["**/*.wasm", "**/*.onnx", "**/*.traineddata", "**/*.png", "**/*.jpg", "**/*.webmanifest", "**/*.js"]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "category": "Medical",
+    "shortDescription": "Point the camera, hear what's there",
+    "longDescription": "Voice-first camera assistance for navigation, reading and environment description, with a haptic guide that watches the path ahead and speaks what it sees.",
+    "copyright": "Watchora",
+    "macOS": {
+      "minimumSystemVersion": "10.15"
+    },
+    "linux": {
+      "deb": {
+        "depends": ["libwebkit2gtk-4.1-0", "libgtk-3-0"]
+      }
+    }
+  }
+}

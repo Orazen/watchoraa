@@ -24,6 +24,7 @@ import { getCurrentPosition, describePlaceAsSpoken, distanceMeters, type Coordin
 import { recognizeText, OCR_FALLBACK_CONFIDENCE_THRESHOLD } from './ocr';
 import { SpeechPriorityManager, type SpeechPriority } from './speechPriority';
 import { handleTablistKeys } from './tablistKeyboard';
+import { resolveApiBase } from './runtimeEnv';
 import { LiveAnnouncer, useLiveAnnouncer } from './accessibility/LiveAnnouncer';
 import { PermissionOnboarding, type OnboardingResult } from './permissions/PermissionOnboarding';
 import { PermissionCenter } from './permissions/PermissionCenter';
@@ -492,10 +493,9 @@ function MainApp({
     speechManagerRef.current.speak({ text, priority, dedupeKey, rate: rateOverride, cooldownMs });
   }
 
-  // Same fallback contract as api.ts: same-origin when deployed, localhost
-  // only when actually running on a dev machine (never in a production build).
-  const isDevHost = typeof window !== 'undefined' && /^(localhost|127\.0\.0\.1)$/.test(window.location.hostname);
-  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? (isDevHost ? 'http://127.0.0.1:4000' : '');
+  // One resolver, shared with api.ts, so the webview and the website can never
+  // disagree about which host the API lives on. See src/runtimeEnv.ts.
+  const apiBaseUrl = resolveApiBase();
 
   // Phase A: local, low-latency hazard detection (YOLOv8n via onnxruntime-web, in a
   // Web Worker). Runs continuously while the camera is on, independent of the

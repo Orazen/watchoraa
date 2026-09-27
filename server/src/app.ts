@@ -7,7 +7,7 @@ import helmet from 'helmet';
 import pinoHttp from 'pino-http';
 import rateLimit from 'express-rate-limit';
 import { apiRouter } from './routes/index.js';
-import { corsOrigins } from './env.js';
+import { allowedOrigins } from './env.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const staticDir = path.resolve(__dirname, '../public-web');
@@ -74,7 +74,11 @@ export function createApp() {
   });
   app.use(
     cors({
-      origin: corsOrigins,
+      // allowedOrigins, not corsOrigins: it also carries the native app's
+      // webview origins, which are fixed by the platform and not configurable.
+      // See the comment in env.ts for why omitting them breaks the app in a way
+      // that looks like a dead server.
+      origin: allowedOrigins,
       credentials: true,
     }),
   );

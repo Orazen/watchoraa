@@ -1,0 +1,257 @@
+name: Native (Tauri)
+
+# Compiles the desktop shell and the Android app. This is deliberately separate
+# from ci.yml: the Rust toolchain is slow to install, and a broken tauri.conf.json
+# should not block a web-only change from reaching the website.
+#
+# It runs on pull_request and on pushes to main that touch the shell, so the
+# "does the native build still compile" question is answered by a real compiler
+# rather than by inspection.
+
+on:
+  pull_request:
+    paths:
+      - 'src-tauri/**'
+      - 'scripts/build-native.mjs'
+      - 'src/runtimeEnv.ts'
+      - 'package.json'
+      - '.github/workflows/native.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src-tauri/**'
+      - 'scripts/build-native.mjs'
+      - 'src/runtimeEnv.ts'
+      - 'package.json'
+      - '.github/workflows/native.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: native-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The public API. Not a secret: it is the same host the public website talks
+  # to, and it is compiled into the binary. The keys stay server-side.
+  VITE_API_BASE_URL: https://watchora.ramagiritharun.in
+
+jobs:
+  preflight:
+    name: Native preflight
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Fails the build with a readable message if the API base is unset, is a
+      # path instead of a URL, or is plain http to a remote host — all of which
+      # produce an app that installs and then fails every request.
+      - name: Check the API base the native build would bake in
+        run: npm run native:check
+      - name: Check the preflight itself still rejects a bad value
+        run: |
+          set -euo pipefail
+          for bad in '' '/api' 'file:///etc/passwd' 'http://127.0.0.1:4000' 'http://watchora.ramagiritharun.in'; do
+            if VITE_API_BASE_URL="$bad" node scripts/build-native.mjs check >/dev/null 2>&1; then
+              echo "✗ the preflight accepted a bad API base: '$bad'"
+              exit 1
+            fi
+          done
+          echo "✓ the preflight rejects all 5 bad values"
+
+  desktop:
+    name: Desktop (${{ matrix.os }})
+    needs: preflight
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-14, windows-2022]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # Linux needs the webkit/gtk headers or `tauri build` fails at the
+      # `webkit2gtk-sys` build script with an error that does not mention a
+      # package to install.
+      - name: Linux webview dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      # `cargo check` on the shell, plus a real web build of the same bundle the
+      # app serves. The APK/DMG/MSI packaging is not built here: it needs
+      # signing identities that must not live in a pull request from a fork,
+      # and an unsigned artifact nobody can install proves very little.
+      - name: Build the web bundle
+        run: npm run build
+
+      - name: Compile the Tauri shell
+        working-directory: src-tauri
+        env:
+          VITE_API_BASE_URL: ${{ env.VITE_API_BASE_URL }}
+        run: cargo check --locked --all-targets
+
+      - name: Clippy
+        working-directory: src-tauri
+        run: cargo clippy --locked --all-targets -- -D warnings
+
+  # A shell that compiles can still panic on the first line of `run()`. The
+  # geolocation plugin's config block did exactly that: cargo check, clippy and
+  # `tauri build` all passed, and the app died at launch with
+  # "PluginInitialization ... invalid type: map, expected unit". Nothing that
+  # stops at "it built" can see that, so this launches the real binary under a
+  # virtual display and fails if it exits.
+  launch-smoke:
+    name: Launch smoke test
+    needs: preflight
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri -> target
+
+      - name: Linux webview dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libssl-dev \
+            xvfb
+
+      - run: npm run build
+
+      - name: Compile the shell
+        working-directory: src-tauri
+        env:
+          VITE_API_BASE_URL: ${{ env.VITE_API_BASE_URL }}
+        run: cargo build
+
+      - name: Launch it and confirm it survives startup
+        working-directory: src-tauri
+        env:
+          VITE_API_BASE_URL: ${{ env.VITE_API_BASE_URL }}
+          DISPLAY: :99
+        run: |
+          set -uo pipefail
+          xvfb-run -a --server-args="-screen 0 1280x860x24" \
+            ./target/debug/watchora > /tmp/app.log 2>&1 &
+          APP_PID=$!
+          sleep 15
+          if ! kill -0 "$APP_PID" 2>/dev/null; then
+            echo "✗ the app exited within 15s of launch"
+            echo "--- log ---"
+            cat /tmp/app.log
+            exit 1
+          fi
+          if grep -qiE "panic|PluginInitialization|thread .* panicked" /tmp/app.log; then
+            echo "✗ the app panicked at startup"
+            cat /tmp/app.log
+            exit 1
+          fi
+          echo "✓ the app launched and stayed up for 15s"
+          echo "--- log ---"
+          cat /tmp/app.log
+          kill "$APP_PID" 2>/dev/null || true
+
+      # A bundle with no camera or microphone usage description is terminated by
+      # macOS the first time it touches either, with no prompt and no error. CI
+      # cannot run a macOS GUI app, but it can read the Info.plist that Tauri
+      # generates, which is where that string has to be.
+      - name: The macOS Info.plist carries the usage strings
+        run: |
+          set -euo pipefail
+          PLIST=src-tauri/Info.plist
+          for key in NSCameraUsageDescription NSMicrophoneUsageDescription; do
+            if ! /usr/libexec/PlistBuddy -c "Print :$key" "$PLIST" >/dev/null 2>&1; then
+              echo "✗ $PLIST is missing $key — macOS kills the app on first camera/mic use"
+              exit 1
+            fi
+            echo "✓ $key present"
+          done
+
+  android:
+    name: Android (debug APK)
+    needs: preflight
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
+
+      - uses: nttld/setup-ndk@v1
+        id: ndk
+
+      # The Java 17 that AGP 8 requires. The runner's default JDK is newer and
+      # Gradle fails with an unhelpful "compileSdk" error.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - run: npx tauri android init
+
+      - name: Build a debug APK
+        env:
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndkPath }}
+          TAURI_ANDROID_PROJECT_PATH: ${{ github.workspace }}/src-tauri/gen/android
+          VITE_API_BASE_URL: ${{ env.VITE_API_BASE_URL }}
+        run: npx tauri android build --apk --target aarch64
+
+      # An APK nobody has installed has not been tested. This at least proves
+      # it is a real, well-formed package with the right permissions and label.
+      - name: Verify the APK
+        run: |
+          set -euo pipefail
+          APK=$(ls src-tauri/gen/android/app/build/outputs/apk/*/release/*.apk | head -1)
+          ls -l "$APK"
+          "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$APK" \
+            | grep -E "^(package|application-label|uses-permission)" | sort
+          echo "--- the label must name the app, not the dev server ---"
+          "$ANDROID_HOME/build-tools/34.0.0/aapt" dump badging "$APK" | grep -E "^application-label" | grep -q "Watchora"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: watchora-debug-apk
+          path: src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          retention-days: 7

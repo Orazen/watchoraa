@@ -12,7 +12,13 @@
     "server:build": "npm --prefix server run build",
     "server:seed": "npm --prefix server run seed",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "native:check": "node scripts/build-native.mjs check",
+    "native": "node scripts/build-native.mjs tauri",
+    "native:dev": "node scripts/build-native.mjs tauri dev",
+    "native:build": "node scripts/build-native.mjs tauri build",
+    "native:android": "node scripts/build-native.mjs tauri android build",
+    "native:ios": "node scripts/build-native.mjs tauri ios build"
   },
   "dependencies": {
     "@zxing/library": "^0.21.3",
@@ -37,6 +43,7 @@
     "playwright": "^1.62.1",
     "tailwind-merge": "^3.7.0",
     "tailwindcss": "^4.3.3",
+    "@tauri-apps/cli": "^2.1.0",
     "typescript": "^5.7.2",
     "vite": "^8.2.1",
     "vitest": "^4.1.10"

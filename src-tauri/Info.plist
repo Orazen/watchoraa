@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Merged into the app's Info.plist by Tauri (it looks for this file next to
+  tauri.conf.json).
+
+  Without these strings macOS TERMINATES an app the moment it touches the
+  camera or the microphone — there is no prompt, no denial, just a process that
+  vanishes on first use. For an app whose entire purpose is pointing a camera at
+  the world and speaking what it sees, that is not a missing nicety; it is the
+  app failing to start.
+
+  These are the words a user reads in the system permission dialog, which for
+  many people is the only explanation they will ever get for why an app wants
+  their camera. So they say what the app does with the image and when, rather
+  than restating the app's name. Written to be understood at a glance, in
+  sentence fragments, by someone who cannot see the window the prompt came from.
+-->
+<plist version="1.0">
+  <dict>
+    <key>NSCameraUsageDescription</key>
+    <string>Watchora uses the camera to describe the path in front of you out loud — kerbs, steps, obstacles, signs and shop names — only while you are using the Watch or Describe feature. The image is analysed to produce that description and is not stored or shared.</string>
+
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Watchora listens for your voice so you can ask what is ahead or ask for help without touching the screen. Recording starts only when you ask for it and stops when the app is closed.</string>
+
+    <key>NSLocationUsageDescription</key>
+    <string>Watchora uses your location to tell you which direction you are facing and to give walking directions. It is read while navigation is running and is not stored.</string>
+
+    <key>NSLocationWhenInUseUsageDescription</key>
+    <string>Watchora uses your location to tell you which direction you are facing and to give walking directions. It is read while navigation is running and is not stored.</string>
+
+    <!--
+      Watchora streams speech from its own server, so the system dictation
+      engine would be both redundant and a second network destination for the
+      microphone. Off by default, and Watchora's own dictation path is what the
+      voice buttons use.
+    -->
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>Watchora converts your spoken questions into text so it can answer them. Speech is sent to Watchora's own servers to be transcribed and is not shared with third parties.</string>
+  </dict>
+</plist>

@@ -480,6 +480,55 @@ check('manifest is standalone + has shortcuts', manifest?.display === 'standalon
 check('manifest ships a Start Watch shortcut', manifest?.shortcuts?.some((s) => /watch/i.test(s.name)), '');
 check('manifest ships an Emergency shortcut', manifest?.shortcuts?.some((s) => /emerg/i.test(s.name)), '');
 
+// ── 10b. The native app can actually reach this API ────────────────────
+// The website is same-origin with the API, so CORS never runs and no web test
+// can see whether it is correct. The Tauri desktop and mobile app is the
+// opposite: its webview origin is an asset origin, so EVERY request is
+// cross-origin. If the allowlist is missing those origins the preflight
+// returns 204 with no Access-Control-Allow-Origin, the browser discards the
+// response, and the app fails exactly as though the server were down — sign-in
+// does nothing and the mascot has nothing to say.
+//
+// So this asserts the headers on live production. It is the only check here
+// that can catch that class of bug.
+const NATIVE_ORIGINS = [
+  ['macOS/Linux webview', 'tauri://localhost'],
+  ['Windows/Android webview', 'https://tauri.localhost'],
+];
+for (const [label, origin] of NATIVE_ORIGINS) {
+  const acao = await page.evaluate(async ([o]) => {
+    try {
+      // A preflight, not the request itself: a failed preflight blocks the real
+      // request, and sending a real auth request from an unknown origin would
+      // burn a rate-limit slot for no information.
+      const res = await fetch('/api/auth/login', {
+        method: 'OPTIONS',
+        headers: {
+          Origin: o,
+          'Access-Control-Request-Method': 'POST',
+          'Access-Control-Request-Headers': 'content-type',
+        },
+      });
+      return res.headers.get('access-control-allow-origin') ?? '(absent)';
+    } catch (e) {
+      return `error: ${String(e).slice(0, 80)}`;
+    }
+  }, [origin]);
+  check(`CORS allows the ${label} origin`, acao === origin, `allow-origin=${acao}`);
+}
+
+const evil = await page.evaluate(async () => {
+  const res = await fetch('/api/auth/login', {
+    method: 'OPTIONS',
+    headers: { Origin: 'https://evil.example', 'Access-Control-Request-Method': 'POST' },
+  });
+  return res.headers.get('access-control-allow-origin') ?? '(absent)';
+});
+// The allowlist is the security boundary. Reflecting any origin would hand
+// every visitor's tokens to a phishing page, so a fix for the two checks above
+// must not become "allow everything".
+check('CORS does NOT reflect an arbitrary origin', evil === '(absent)', `allow-origin=${evil}`);
+
 // ── 11. Typed commands route to the right Watch intent ─────────────────
 // The deterministic router is where a regression would be silent: a phrase
 // falls through to the LLM path, the user gets a chat answer instead of

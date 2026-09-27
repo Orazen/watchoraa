@@ -1,0 +1,35 @@
+[package]
+name = "watchora"
+version = "1.0.0"
+description = "Voice-first camera assistance for blind and low-vision people"
+authors = ["Watchora"]
+edition = "2021"
+rust-version = "1.77.2"
+default-run = "watchora"
+
+[lib]
+# The same crate backs the desktop binary and the iOS/Android app. Tauri
+# requires the lib target to be named after the package with dashes replaced,
+# so mobile can call `watchora_lib::run()`.
+name = "watchora_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# `protocol-asset` is required by the assetProtocol block in tauri.conf.json,
+# which is how the webview reaches the local .wasm / .onnx / .traineddata model
+# files the hazard detector and OCR load. tauri-build fails the build if the
+# feature and the config disagree, so these two must be changed together.
+tauri = { version = "2", features = ["protocol-asset"] }
+tauri-plugin-geolocation = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

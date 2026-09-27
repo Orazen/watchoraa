@@ -7,3 +7,19 @@ dist/
 .claude-flow/
 server/.claude-flow/
 .audit/
+
+# ── Tauri (native desktop + mobile) ──
+# Rust build output. Rebuildable, and enormous.
+src-tauri/target/
+
+# The Android and iOS projects are generated from tauri.conf.json and
+# Cargo.toml by `tauri android init` / `tauri ios init`. Committing them means
+# two sources of truth that disagree after the first config change, and the
+# generated Gradle and Xcode files churn on every toolchain bump.
+src-tauri/gen/android/
+src-tauri/gen/apple/
+
+# The JSON schemas are regenerated from the capabilities on every build. The
+# capability files reference them via $schema for editor autocomplete, which
+# resolves after the first build — this matches the upstream Tauri template.
+src-tauri/gen/schemas/
