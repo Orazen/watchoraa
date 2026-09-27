@@ -263,6 +263,16 @@ const wardPrefsSchema = z
     textScale: z.number().min(0.8).max(2).optional(),
     lowConnectivityMode: z.boolean().optional(),
     imageRetentionHours: z.number().int().min(0).max(24 * 7).optional(),
+    // Voice detail level (Essential/Standard/Detailed) — persisted server-side
+    // so a caregiver can set it during first-time setup and it follows the
+    // ward across devices.
+    verbosity: z.number().int().min(0).max(2).optional(),
+    // Account language (drives recognition and voice locale on the ward's
+    // device when preferences sync on load).
+    preferredLanguage: z
+      .string()
+      .regex(/^[a-zA-Z]{2}(-[a-zA-Z]{2,4})?$/, 'Language must be like "en", "te" or "pt-BR"')
+      .optional(),
     aiProvider: wardAiProviderSchema.optional(),
   })
   .refine((value) => Object.keys(value).length > 0, { message: 'At least one preference is required' });
@@ -277,6 +287,7 @@ const WARD_PREFS_DEFAULTS = {
   textScale: 1,
   lowConnectivityMode: true,
   imageRetentionHours: 0,
+  verbosity: 1,
 };
 
 caregiverRouter.put(
@@ -289,7 +300,7 @@ caregiverRouter.put(
     }
     const resolved = await resolveManagedWard(request, response);
     if (!resolved) return;
-    const { aiProvider, ...prefData } = parsed.data;
+    const { aiProvider, preferredLanguage, ...prefData } = parsed.data;
 
     let updated = await prisma.accessibilityPrefs.findUnique({ where: { userId: resolved.wardId } });
     if (Object.keys(prefData).length > 0) {
@@ -304,6 +315,25 @@ caregiverRouter.put(
         entityType: 'AccessibilityPrefs',
         entityId: updated.id,
         metadata: { fields: Object.keys(prefData) },
+      });
+    }
+
+    // Account language lives on the User row (it drives recognition and voice
+    // locale on the ward's device), not on AccessibilityPrefs.
+    let wardLanguage = resolved.wardPreferredLanguage;
+    if (preferredLanguage !== undefined) {
+      const normalized = preferredLanguage.toLowerCase();
+      const updatedWard = await prisma.user.update({
+        where: { id: resolved.wardId },
+        data: { preferredLanguage: normalized },
+      });
+      wardLanguage = updatedWard.preferredLanguage;
+      await recordAudit({
+        actorId: resolved.caregiverId,
+        action: 'caregiver.ward_settings_update',
+        entityType: 'User',
+        entityId: resolved.wardId,
+        metadata: { fields: ['preferredLanguage'] },
       });
     }
 
@@ -357,7 +387,7 @@ caregiverRouter.put(
 
     // Return the same envelope as GET so the client can refresh the whole panel.
     response.json({
-      ward: { id: resolved.wardId, fullName: resolved.wardName, preferredLanguage: resolved.wardPreferredLanguage },
+      ward: { id: resolved.wardId, fullName: resolved.wardName, preferredLanguage: wardLanguage },
       preferences: updated,
       aiProvider: aiPrefRow
         ? serializeAiPref(aiPrefRow)

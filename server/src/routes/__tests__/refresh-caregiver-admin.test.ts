@@ -354,6 +354,51 @@ describe("/api/caregiver/ward-settings/:userId (remote config)", () => {
     expect(empty.status).toBe(400);
   });
 
+  it("lets a granted caregiver set the ward's voice detail level and account language", async () => {
+    const { prisma } = await import("../../lib/prisma.js");
+    const contact = await prisma.trustedContact.create({
+      data: { userId: blindId, name: "Config Caregiver", email: caregiverEmail, canReceiveAlerts: true, canManageSettings: true },
+    });
+
+    const save = await request(app)
+      .put(`/api/caregiver/ward-settings/${blindId}`)
+      .set("Authorization", `Bearer ${caregiverToken}`)
+      .send({ verbosity: 2, preferredLanguage: "TE" });
+    expect(save.status).toBe(200);
+    expect(save.body.preferences.verbosity).toBe(2);
+    expect(save.body.ward.preferredLanguage).toBe("te");
+
+    const verify = await request(app)
+      .get(`/api/caregiver/ward-settings/${blindId}`)
+      .set("Authorization", `Bearer ${caregiverToken}`);
+    expect(verify.status).toBe(200);
+    expect(verify.body.preferences.verbosity).toBe(2);
+    expect(verify.body.ward.preferredLanguage).toBe("te");
+
+    // The ward's own preferences endpoint reads the same fields back.
+    const wardView = await request(app)
+      .get("/api/preferences")
+      .set("Authorization", `Bearer ${blindToken}`);
+    expect(wardView.status).toBe(200);
+    expect(wardView.body.preferences.verbosity).toBe(2);
+
+    // And the ward can change it from their own side, persisting the same field.
+    const wardUpdate = await request(app)
+      .put("/api/preferences")
+      .set("Authorization", `Bearer ${blindToken}`)
+      .send({ verbosity: 0 });
+    expect(wardUpdate.status).toBe(200);
+    expect(wardUpdate.body.preferences.verbosity).toBe(0);
+
+    const invalid = await request(app)
+      .put(`/api/caregiver/ward-settings/${blindId}`)
+      .set("Authorization", `Bearer ${caregiverToken}`)
+      .send({ preferredLanguage: "not-a-code" });
+    expect(invalid.status).toBe(400);
+
+    await prisma.trustedContact.delete({ where: { id: contact!.id } });
+  });
+
   it("blocks blind users from the caregiver remote-config endpoints", async () => {
     const view = await request(app)
       .get(`/api/caregiver/ward-settings/${blindId}`)

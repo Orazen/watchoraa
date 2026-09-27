@@ -90,6 +90,7 @@ export type AccessibilityPreferences = {
   textScale: number;
   lowConnectivityMode: boolean;
   imageRetentionHours: number;
+  verbosity: number;
 };
 
 export type ReadingEntry = {
@@ -174,13 +175,14 @@ export type WardSettings = {
   aiProvider: WardAiProviderStatus;
 };
 
-/** Ward fields a caregiver may change (accessibility prefs + AI provider). */
+/** Ward fields a caregiver may change (accessibility prefs + AI provider +
+ * account language, which lives on the User row). */
 export type WardPreferencesPatch = Partial<
   Pick<
     AccessibilityPreferences,
-    'speechRate' | 'voiceName' | 'instructionDetail' | 'vibrationEnabled' | 'audioEnabled' | 'reducedMotion' | 'textScale' | 'lowConnectivityMode' | 'imageRetentionHours'
+    'speechRate' | 'voiceName' | 'instructionDetail' | 'vibrationEnabled' | 'audioEnabled' | 'reducedMotion' | 'textScale' | 'lowConnectivityMode' | 'imageRetentionHours' | 'verbosity'
   >
-> & { aiProvider?: WardAiProviderPatch };
+> & { aiProvider?: WardAiProviderPatch; preferredLanguage?: string };
 
 export type PromptVersion = {
   id: string;
@@ -544,7 +546,7 @@ export const api = {
   adminListAuditLogs: (limit = 100) => request<{ logs: AuditLogRow[] }>(`/api/audit-logs?limit=${limit}`),
 
   getPreferences: () => request<{ preferences: AccessibilityPreferences }>('/api/preferences'),
-  updatePreferences: (input: Partial<Pick<AccessibilityPreferences, 'speechRate' | 'voiceName' | 'instructionDetail' | 'vibrationEnabled' | 'audioEnabled' | 'reducedMotion' | 'textScale' | 'lowConnectivityMode' | 'imageRetentionHours'>>) =>
+  updatePreferences: (input: Partial<Pick<AccessibilityPreferences, 'speechRate' | 'voiceName' | 'instructionDetail' | 'vibrationEnabled' | 'audioEnabled' | 'reducedMotion' | 'textScale' | 'lowConnectivityMode' | 'imageRetentionHours' | 'verbosity'>>) =>
     request<{ preferences: AccessibilityPreferences }>('/api/preferences', { method: 'PUT', body: JSON.stringify(input) }),
 
   listReadingEntries: () => request<{ entries: ReadingEntry[] }>('/api/reading-entries'),

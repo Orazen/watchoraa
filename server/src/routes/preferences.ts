@@ -17,6 +17,7 @@ const DEFAULT_PREFS = {
   textScale: 1,
   lowConnectivityMode: true,
   imageRetentionHours: 0,
+  verbosity: 1,
 };
 
 const updateSchema = z
@@ -30,6 +31,10 @@ const updateSchema = z
     textScale: z.number().min(0.8).max(2).optional(),
     lowConnectivityMode: z.boolean().optional(),
     imageRetentionHours: z.number().int().min(0).max(24 * 7).optional(),
+    // Voice detail level (Essential/Standard/Detailed). Persisted server-side
+    // so a granted caregiver's remote configuration and the ward's own local
+    // changes write the same field.
+    verbosity: z.number().int().min(0).max(2).optional(),
   })
   .refine((value) => Object.keys(value).length > 0, { message: 'At least one preference is required' });
 
@@ -44,6 +49,7 @@ function serialize(prefs: {
   textScale: number;
   lowConnectivityMode: boolean;
   imageRetentionHours: number;
+  verbosity: number;
 }) {
   return {
     id: prefs.id,
@@ -56,6 +62,7 @@ function serialize(prefs: {
     textScale: prefs.textScale,
     lowConnectivityMode: prefs.lowConnectivityMode,
     imageRetentionHours: prefs.imageRetentionHours,
+    verbosity: prefs.verbosity,
   };
 }
 

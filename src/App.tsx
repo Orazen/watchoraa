@@ -1778,6 +1778,22 @@ function MainApp({
         prefsLoadedRef.current = true;
         setVoiceRate(res.preferences.speechRate);
         if (res.preferences.voiceName) setVoice(res.preferences.voiceName);
+        // Voice detail level and account language are caretaker-configurable
+        // (remote care) and persist server-side, so they follow the ward
+        // across devices — apply them over the device-local defaults.
+        const serverVerbosity = res.preferences.verbosity;
+        if (serverVerbosity === 0 || serverVerbosity === 1 || serverVerbosity === 2) {
+          if (voiceAssistant.settings.verbosity !== serverVerbosity) {
+            voiceAssistant.setSettings({ verbosity: serverVerbosity });
+          }
+        }
+        try {
+          const stored = JSON.parse(localStorage.getItem('watchora_user') || 'null') as { preferredLanguage?: string } | null;
+          const lang = stored?.preferredLanguage;
+          if (typeof lang === 'string' && /^[a-zA-Z]{2}(-[a-zA-Z]{2,4})?$/.test(lang) && voiceAssistant.settings.language.toLowerCase() !== lang.toLowerCase()) {
+            voiceAssistant.setSettings({ language: lang });
+          }
+        } catch { /* no stored user record — keep the device language */ }
       })
       .catch(() => announce('Could not load your saved settings.', 'warning'));
     api
@@ -2313,6 +2329,10 @@ function MainApp({
                       speechManagerRef.current?.setVerbosity(patch.verbosity);
                       const levelName = patch.verbosity === 0 ? 'Essential: only hazards and emergencies will speak.' : patch.verbosity === 2 ? 'Detailed: all narration enabled.' : 'Standard detail level.';
                       speak(`Detail level ${levelName} Emergency warnings always speak.`, 5, 'settings-verbosity');
+                      // Persist server-side too: the detail level must survive a
+                      // device change and stay consistent with what a granted
+                      // caregiver configures remotely.
+                      void api.updatePreferences({ verbosity: patch.verbosity }).catch(() => announce('Could not save the detail level.', 'warning'));
                     }
                     if ('pushToTalk' in patch) {
                       if (patch.pushToTalk) {

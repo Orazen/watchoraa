@@ -127,6 +127,7 @@ model AccessibilityPrefs {
   textScale           Float    @default(1)
   lowConnectivityMode Boolean  @default(true)
   imageRetentionHours Int      @default(0)
+  verbosity           Int     @default(1)
   user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 

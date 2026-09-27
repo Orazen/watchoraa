@@ -18,6 +18,29 @@ import {
 } from '../components/ui';
 import type { Tone } from './shared';
 
+/** Account languages a caregiver can set for a ward. Drives speech recognition
+ * and the default voice locale on the ward's device. */
+const LANGUAGES: Array<[string, string]> = [
+  ['en', 'English'],
+  ['hi', 'हिन्दी — Hindi'],
+  ['te', 'తెలుగు — Telugu'],
+  ['ta', 'தமிழ் — Tamil'],
+  ['kn', 'ಕನ್ನಡ — Kannada'],
+  ['mr', 'मराठी — Marathi'],
+  ['bn', 'বাংলা — Bengali'],
+  ['gu', 'ગુજરાતી — Gujarati'],
+  ['ml', 'മലയാളം — Malayalam'],
+  ['pa', 'ਪੰਜਾਬੀ — Punjabi'],
+  ['ur', 'اردو — Urdu'],
+  ['es', 'Español'],
+  ['fr', 'Français'],
+  ['de', 'Deutsch'],
+  ['pt', 'Português'],
+  ['it', 'Italiano'],
+  ['zh', '中文'],
+  ['ja', '日本語'],
+];
+
 /** Section heading for the caregiver instrument panel: kicker, icon, title. */
 function PanelHeading({ kicker, icon, title }: { kicker: string; icon: React.ReactNode; title: string }) {
   return (
@@ -259,6 +282,8 @@ function WardSettingsPanel({ userId, wardName, announce }: { userId: string; war
           textScale: s.preferences.textScale,
           lowConnectivityMode: s.preferences.lowConnectivityMode,
           imageRetentionHours: s.preferences.imageRetentionHours,
+          verbosity: s.preferences.verbosity ?? 1,
+          preferredLanguage: s.ward.preferredLanguage,
         } : {});
         setAiProvider(s.aiProvider.provider);
         setAiModel(s.aiProvider.model ?? '');
@@ -380,6 +405,38 @@ function WardSettingsPanel({ userId, wardName, announce }: { userId: string; war
               onChange={(e) => setDraft((p) => ({ ...p, instructionDetail: Number(e.target.value) }))}
             />
           </div>
+          <div className="flex flex-col gap-2">
+            <span className="text-sm font-semibold text-foreground">Voice detail level</span>
+            <div role="radiogroup" aria-label={`${wardName} voice detail level`} className="flex flex-wrap gap-2">
+              {([0, 1, 2] as const).map((level) => (
+                <Button
+                  key={level}
+                  role="radio"
+                  aria-checked={d.verbosity === level}
+                  variant={d.verbosity === level ? 'secondary' : 'outline'}
+                  onClick={() => setDraft((p) => ({ ...p, verbosity: level }))}
+                >
+                  {level === 0 ? 'Essential' : level === 1 ? 'Standard' : 'Detailed'}
+                </Button>
+              ))}
+            </div>
+            <p className="text-sm text-muted-foreground">
+              Essential speaks only hazards, deviations and emergencies. Standard adds navigation and answers. Detailed adds
+              background narration. Emergency warnings always speak, at every level.
+            </p>
+          </div>
+          <Field label="Account language" htmlFor={`ward-language-${userId}`}>
+            <Select
+              id={`ward-language-${userId}`}
+              aria-label={`${wardName} account language`}
+              value={d.preferredLanguage ?? settings?.ward.preferredLanguage ?? 'en'}
+              onChange={(e) => setDraft((p) => ({ ...p, preferredLanguage: e.target.value }))}
+            >
+              {LANGUAGES.map(([code, label]) => (
+                <option key={code} value={code}>{label}</option>
+              ))}
+            </Select>
+          </Field>
           <Field label="Voice" htmlFor={`ward-voice-${userId}`}>
             <Input
               id={`ward-voice-${userId}`}
