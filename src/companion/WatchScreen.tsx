@@ -237,7 +237,13 @@ export function WatchScreen({
                   onClick={() => {
                     watch.setCadence(c);
                     announce(`Watch set to ${c}`);
-                    speak(`Watch is now in ${c} mode. ${WATCH_CADENCE_LABELS[c]}.`, 5, `watch-cadence-${c}`);
+                    // Priority 4 (user-answer), not 5 (navigation): the user
+                    // just tapped this, so acknowledging them is a direct
+                    // reply to a direct action. At 5 it queued behind whatever
+                    // Watch was already describing, and a blind user who
+                    // changed the cadence heard nothing for many seconds and
+                    // had no way to know whether the tap had landed.
+                    speak(`Watch is now in ${c} mode. ${WATCH_CADENCE_LABELS[c]}.`, 4, `watch-cadence-${c}`);
                   }}
                   className={cn(
                     'rounded-xl border px-4 py-3 text-left text-sm transition',
